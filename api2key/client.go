@@ -18,7 +18,7 @@ import (
 
 const (
 	DefaultBaseAPIURL = "https://open.api2key.com"
-	DefaultTTSURL     = "https://api2key-azure-tts.guan-afred.workers.dev"
+	DefaultTTSURL     = "https://tts.api2key.com"
 	DefaultAPIPrefix  = "/api/v1"
 )
 
