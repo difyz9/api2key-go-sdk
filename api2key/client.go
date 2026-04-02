@@ -43,7 +43,6 @@ type Option func(*Config)
 func NewClient(options ...Option) *Client {
 	config := Config{
 		BaseAPIURL: DefaultBaseAPIURL,
-		TTSURL:     DefaultTTSURL,
 		APIPrefix:  DefaultAPIPrefix,
 		HTTPClient: &http.Client{Timeout: 30 * time.Second},
 	}
@@ -53,9 +52,14 @@ func NewClient(options ...Option) *Client {
 	if config.HTTPClient == nil {
 		config.HTTPClient = &http.Client{Timeout: 30 * time.Second}
 	}
+	baseAPIURL := strings.TrimRight(config.BaseAPIURL, "/")
+	ttsURL := strings.TrimRight(strings.TrimSpace(config.TTSURL), "/")
+	if ttsURL == "" {
+		ttsURL = deriveServiceBaseURL(baseAPIURL)
+	}
 	return &Client{
-		baseAPIURL:    strings.TrimRight(config.BaseAPIURL, "/"),
-		ttsURL:        strings.TrimRight(config.TTSURL, "/"),
+		baseAPIURL:    baseAPIURL,
+		ttsURL:        ttsURL,
 		apiPrefix:     normalizeAPIPrefix(config.APIPrefix),
 		serviceSecret: strings.TrimSpace(config.ServiceSecret),
 		httpClient:    config.HTTPClient,
@@ -98,6 +102,26 @@ func normalizeAPIPrefix(prefix string) string {
 		return DefaultAPIPrefix
 	}
 	return "/" + strings.Trim(prefix, "/")
+}
+
+func deriveServiceBaseURL(baseAPIURL string) string {
+	trimmed := strings.TrimSpace(baseAPIURL)
+	if trimmed == "" {
+		return DefaultBaseAPIURL
+	}
+
+	parsed, err := url.Parse(trimmed)
+	if err != nil || parsed.Host == "" {
+		return DefaultBaseAPIURL
+	}
+
+	derived := *parsed
+	derived.RawPath = ""
+	derived.Path = ""
+	derived.RawQuery = ""
+	derived.Fragment = ""
+
+	return strings.TrimRight(derived.String(), "/")
 }
 
 type envelope[T any] struct {

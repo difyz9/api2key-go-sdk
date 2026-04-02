@@ -48,11 +48,14 @@ func main() {
 	ctx, cancel := context.WithTimeout(context.Background(), cfg.Timeout)
 	defer cancel()
 
-	client := api2key.NewClient(
+	options := []api2key.Option{
 		api2key.WithBaseAPIURL(cfg.BaseAPIURL),
-		api2key.WithTTSURL(cfg.TTSURL),
 		api2key.WithServiceSecret(cfg.ServiceSecret),
-	)
+	}
+	if strings.TrimSpace(cfg.TTSURL) != "" {
+		options = append(options, api2key.WithTTSURL(cfg.TTSURL))
+	}
+	client := api2key.NewClient(options...)
 
 	loginResult, err := client.Login(ctx, api2key.LoginRequest{
 		Email:     cfg.Email,
@@ -159,7 +162,7 @@ func main() {
 func loadConfig() config {
 	var cfg config
 	flag.StringVar(&cfg.BaseAPIURL, "base-url", getenv("API2KEY_BASE_URL", api2key.DefaultBaseAPIURL), "base api url")
-	flag.StringVar(&cfg.TTSURL, "tts-url", getenv("API2KEY_TTS_URL", api2key.DefaultTTSURL), "tts service url")
+	flag.StringVar(&cfg.TTSURL, "tts-url", getenv("API2KEY_TTS_URL", ""), "optional tts service url override")
 	flag.StringVar(&cfg.ServiceSecret, "service-secret", getenv("API2KEY_SERVICE_SECRET", ""), "service secret for credits api")
 	flag.StringVar(&cfg.Email, "email", getenv("API2KEY_EMAIL", ""), "login email")
 	flag.StringVar(&cfg.Password, "password", getenv("API2KEY_PASSWORD", ""), "login password")

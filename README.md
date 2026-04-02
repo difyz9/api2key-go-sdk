@@ -45,8 +45,6 @@ func main() {
 	ctx := context.Background()
 	client := api2key.NewClient(
 		api2key.WithBaseAPIURL("https://open.api2key.com"),
-		api2key.WithTTSURL("https://tts.api2key.com"),
-		api2key.WithServiceSecret("your-service-secret"),
 	)
 
 	loginResult, err := client.Login(ctx, api2key.LoginRequest{
@@ -121,6 +119,13 @@ func main() {
 	}
 ```
 
+说明：
+
+- TTS / ASR 相关接口默认直接复用 `BaseAPIURL`，通过 `api2key-base-api` 暴露的桥接路由访问 `api2key-azure-tts`。
+- 生产环境下传 `https://open.api2key.com` 即可，不需要再单独配置 `https://tts.api2key.com`。
+- `WithTTSURL(...)` 仍然保留，主要用于本地调试、灰度环境或手动覆盖特殊部署。
+- `WithServiceSecret(...)` 只在调用积分接口时需要，单纯调用 TTS / ASR 不需要。
+
 	## 可运行示例
 
 	仓库里带了一个可直接运行的示例程序：
@@ -169,6 +174,25 @@ func main() {
 	API2KEY_EXAMPLE_DO_CREDITS=true \
 	API2KEY_CREDITS_USER_ID=user_123 \
 	go run ./example
+	```
+
+	如果你已经有现成 API Key，也可以直接只配一个入口地址来调 TTS：
+
+	```go
+	ctx := context.Background()
+	client := api2key.NewClient(
+		api2key.WithBaseAPIURL("https://open.api2key.com"),
+	)
+
+	voices, err := client.ListVoices(ctx, api2key.ListVoicesRequest{
+		APIKey:   "sk-your-api-key",
+		Provider: "azure",
+		Locale:   "zh-CN",
+	})
+	if err != nil {
+		log.Fatal(err)
+	}
+	_ = voices
 	```
 
 	这个示例默认总会执行：登录、创建 API Key、查询语音列表。其余动作通过开关控制：
