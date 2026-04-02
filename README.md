@@ -207,6 +207,9 @@ func main() {
 
 - `Login`
 - `CreateAPIKey`
+- `ListAPIKeys`
+- `UpdateAPIKey`
+- `DeleteAPIKey`
 - `LoginAndCreateAPIKey`
 
 ### 语音与转写

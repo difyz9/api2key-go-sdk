@@ -37,6 +37,25 @@ type CreateAPIKeyResponse struct {
 	Key APIKeySecret `json:"key"`
 }
 
+type UserAPIKey struct {
+	ID         string `json:"id"`
+	Name       string `json:"name"`
+	KeyPrefix  string `json:"keyPrefix"`
+	Active     bool   `json:"active"`
+	LastUsedAt *int64 `json:"lastUsedAt,omitempty"`
+	CreatedAt  int64  `json:"createdAt"`
+	UpdatedAt  int64  `json:"updatedAt"`
+}
+
+type ListAPIKeysResponse struct {
+	Keys []UserAPIKey `json:"keys"`
+}
+
+type UpdateAPIKeyRequest struct {
+	Name   *string `json:"name,omitempty"`
+	Active *bool   `json:"active,omitempty"`
+}
+
 func (c *Client) Login(ctx context.Context, input LoginRequest) (*LoginResponse, error) {
 	if strings.TrimSpace(input.Email) == "" {
 		return nil, errors.New("email is required")
@@ -61,7 +80,7 @@ func (c *Client) CreateAPIKey(ctx context.Context, accessToken string, input Cre
 	}
 	var out CreateAPIKeyResponse
 	endpoint := joinURL(c.baseAPIURL, c.apiPrefix, "user", "api-keys")
-	headers := map[string]string{"Authorization": "Bearer " + accessToken}
+	headers := bearerHeaders(accessToken)
 	if err := c.requestJSON(ctx, http.MethodPost, endpoint, headers, input, &out); err != nil {
 		return nil, err
 	}
@@ -71,10 +90,51 @@ func (c *Client) CreateAPIKey(ctx context.Context, accessToken string, input Cre
 	return &out, nil
 }
 
+func (c *Client) ListAPIKeys(ctx context.Context, accessToken string) (*ListAPIKeysResponse, error) {
+	if strings.TrimSpace(accessToken) == "" {
+		return nil, errors.New("access token is required")
+	}
+	var out ListAPIKeysResponse
+	endpoint := joinURL(c.baseAPIURL, c.apiPrefix, "user", "api-keys")
+	if err := c.requestJSON(ctx, http.MethodGet, endpoint, bearerHeaders(accessToken), nil, &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
+func (c *Client) UpdateAPIKey(ctx context.Context, accessToken, keyID string, input UpdateAPIKeyRequest) error {
+	if strings.TrimSpace(accessToken) == "" {
+		return errors.New("access token is required")
+	}
+	if strings.TrimSpace(keyID) == "" {
+		return errors.New("key id is required")
+	}
+	if input.Name == nil && input.Active == nil {
+		return errors.New("name or active must be provided")
+	}
+	endpoint := joinURL(c.baseAPIURL, c.apiPrefix, "user", "api-keys", escapePath(keyID))
+	return c.requestJSON(ctx, http.MethodPatch, endpoint, bearerHeaders(accessToken), input, nil)
+}
+
+func (c *Client) DeleteAPIKey(ctx context.Context, accessToken, keyID string) error {
+	if strings.TrimSpace(accessToken) == "" {
+		return errors.New("access token is required")
+	}
+	if strings.TrimSpace(keyID) == "" {
+		return errors.New("key id is required")
+	}
+	endpoint := joinURL(c.baseAPIURL, c.apiPrefix, "user", "api-keys", escapePath(keyID))
+	return c.requestJSON(ctx, http.MethodDelete, endpoint, bearerHeaders(accessToken), nil, nil)
+}
+
 func (c *Client) LoginAndCreateAPIKey(ctx context.Context, loginRequest LoginRequest, createRequest CreateAPIKeyRequest) (*CreateAPIKeyResponse, error) {
 	loginResult, err := c.Login(ctx, loginRequest)
 	if err != nil {
 		return nil, err
 	}
 	return c.CreateAPIKey(ctx, loginResult.AccessToken, createRequest)
+}
+
+func bearerHeaders(accessToken string) map[string]string {
+	return map[string]string{"Authorization": "Bearer " + strings.TrimSpace(accessToken)}
 }
