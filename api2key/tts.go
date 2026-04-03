@@ -26,41 +26,63 @@ type ListVoicesResponse struct {
 }
 
 type ListVoicesRequest struct {
-	APIKey   string
-	Provider string
-	Locale   string
-	Search   string
+	ProjectID string
+	APIKey    string
+	Provider  string
+	Locale    string
+	Search    string
 }
 
 type SynthesizeSpeechRequest struct {
-	APIKey   string  `json:"-"`
-	Provider string  `json:"provider,omitempty"`
-	Text     string  `json:"text"`
-	Voice    string  `json:"voice,omitempty"`
-	Locale   string  `json:"locale,omitempty"`
-	Rate     float64 `json:"rate,omitempty"`
-	Volume   float64 `json:"volume,omitempty"`
-	Pitch    float64 `json:"pitch,omitempty"`
-	Format   string  `json:"format,omitempty"`
-	Style    string  `json:"style,omitempty"`
+	ProjectID string  `json:"-"`
+	APIKey    string  `json:"-"`
+	Provider  string  `json:"provider,omitempty"`
+	Text      string  `json:"text"`
+	Voice     string  `json:"voice,omitempty"`
+	Locale    string  `json:"locale,omitempty"`
+	Rate      float64 `json:"rate,omitempty"`
+	Volume    float64 `json:"volume,omitempty"`
+	Pitch     float64 `json:"pitch,omitempty"`
+	Format    string  `json:"format,omitempty"`
+	Style     string  `json:"style,omitempty"`
 }
 
 type SynthesizeSpeechResult struct {
 	Audio       []byte
+	ContentType string
+	FileName    string
 	Provider    string
 	Voice       string
+	Locale      string
+	Format      string
 	Charged     string
+	StorageKey  string
 	DownloadURL string
 	Headers     http.Header
 }
 
 type ASRRequest struct {
+	ProjectID       string
 	APIKey          string
 	AudioFilePath   string
 	AudioURL        string
 	Provider        string
 	EngineModelType string
 	Async           bool
+}
+
+type ASRTaskQueryRequest struct {
+	ProjectID string
+	APIKey    string
+	TaskID    string
+	Provider  string
+}
+
+type DownloadSpeechAudioResult struct {
+	Audio       []byte
+	ContentType string
+	FileName    string
+	Headers     http.Header
 }
 
 type ASRTaskResponse struct {
@@ -95,7 +117,10 @@ func (c *Client) ListVoices(ctx context.Context, input ListVoicesRequest) (*List
 	if strings.TrimSpace(input.Search) != "" {
 		query.Set("search", input.Search)
 	}
-	endpoint := joinURL(c.ttsURL, "api", "voices")
+	if strings.TrimSpace(input.ProjectID) != "" {
+		query.Set("projectId", input.ProjectID)
+	}
+	endpoint := joinURL(c.speechURL, "api", "voices")
 	if encoded := query.Encode(); encoded != "" {
 		endpoint += "?" + encoded
 	}
@@ -114,7 +139,10 @@ func (c *Client) SynthesizeSpeech(ctx context.Context, input SynthesizeSpeechReq
 	if strings.TrimSpace(input.Text) == "" {
 		return nil, errors.New("text is required")
 	}
-	endpoint := joinURL(c.ttsURL, "api", "speech")
+	endpoint := joinURL(c.speechURL, "api", "speech")
+	if strings.TrimSpace(input.ProjectID) != "" {
+		endpoint += "?" + url.Values{"projectId": []string{input.ProjectID}}.Encode()
+	}
 	body := map[string]any{
 		"provider": input.Provider,
 		"text":     input.Text,
@@ -134,9 +162,14 @@ func (c *Client) SynthesizeSpeech(ctx context.Context, input SynthesizeSpeechReq
 	}
 	return &SynthesizeSpeechResult{
 		Audio:       raw,
+		ContentType: headers.Get("Content-Type"),
+		FileName:    headerFilename(headers.Get("Content-Disposition")),
 		Provider:    headers.Get("X-TTS-Provider"),
 		Voice:       headers.Get("X-TTS-Voice"),
+		Locale:      headers.Get("X-TTS-Locale"),
+		Format:      headers.Get("X-TTS-Format"),
 		Charged:     headers.Get("X-TTS-Credits-Charged"),
+		StorageKey:  headers.Get("X-TTS-Storage-Key"),
 		DownloadURL: headers.Get("X-TTS-Download-Url"),
 		Headers:     headers,
 	}, nil
@@ -162,15 +195,32 @@ func (c *Client) AudioToSRT(ctx context.Context, input ASRRequest) (*ASRTaskResp
 }
 
 func (c *Client) GetASRTask(ctx context.Context, apiKey, taskID string) (*ASRTaskResponse, error) {
-	if strings.TrimSpace(apiKey) == "" {
+	return c.GetASRTaskWithOptions(ctx, ASRTaskQueryRequest{
+		APIKey: apiKey,
+		TaskID: taskID,
+	})
+}
+
+func (c *Client) GetASRTaskWithOptions(ctx context.Context, input ASRTaskQueryRequest) (*ASRTaskResponse, error) {
+	if strings.TrimSpace(input.APIKey) == "" {
 		return nil, errors.New("api key is required")
 	}
-	if strings.TrimSpace(taskID) == "" {
+	if strings.TrimSpace(input.TaskID) == "" {
 		return nil, errors.New("task id is required")
 	}
-	endpoint := joinURL(c.ttsURL, "api", "asr", "tasks", escapePath(taskID))
+	endpoint := joinURL(c.speechURL, "api", "asr", "tasks", escapePath(input.TaskID))
+	query := url.Values{}
+	if strings.TrimSpace(input.ProjectID) != "" {
+		query.Set("projectId", input.ProjectID)
+	}
+	if strings.TrimSpace(input.Provider) != "" {
+		query.Set("provider", input.Provider)
+	}
+	if encoded := query.Encode(); encoded != "" {
+		endpoint += "?" + encoded
+	}
 	var raw map[string]any
-	headers := map[string]string{"x-api-key": apiKey}
+	headers := map[string]string{"x-api-key": input.APIKey}
 	if err := c.requestJSON(ctx, http.MethodGet, endpoint, headers, nil, &raw); err != nil {
 		return nil, err
 	}
@@ -178,6 +228,13 @@ func (c *Client) GetASRTask(ctx context.Context, apiKey, taskID string) (*ASRTas
 }
 
 func (c *Client) PollASRTask(ctx context.Context, apiKey, taskID string, interval time.Duration, maxAttempts int) (*ASRTaskResponse, error) {
+	return c.PollASRTaskWithOptions(ctx, ASRTaskQueryRequest{
+		APIKey: apiKey,
+		TaskID: taskID,
+	}, interval, maxAttempts)
+}
+
+func (c *Client) PollASRTaskWithOptions(ctx context.Context, input ASRTaskQueryRequest, interval time.Duration, maxAttempts int) (*ASRTaskResponse, error) {
 	if interval <= 0 {
 		interval = 2 * time.Second
 	}
@@ -185,7 +242,7 @@ func (c *Client) PollASRTask(ctx context.Context, apiKey, taskID string, interva
 		maxAttempts = 30
 	}
 	for attempt := 1; attempt <= maxAttempts; attempt++ {
-		result, err := c.GetASRTask(ctx, apiKey, taskID)
+		result, err := c.GetASRTaskWithOptions(ctx, input)
 		if err != nil {
 			return nil, err
 		}
@@ -217,7 +274,14 @@ func (c *Client) submitASR(ctx context.Context, action string, input ASRRequest)
 	if engineModelType == "" {
 		engineModelType = "16k_zh"
 	}
-	endpoint := joinURL(c.ttsURL, "api", "asr", action)
+	endpoint := joinURL(c.speechURL, "api", "asr", action)
+	query := url.Values{}
+	if strings.TrimSpace(input.ProjectID) != "" {
+		query.Set("projectId", input.ProjectID)
+	}
+	if encoded := query.Encode(); encoded != "" {
+		endpoint += "?" + encoded
+	}
 	headers := map[string]string{"x-api-key": input.APIKey}
 
 	if strings.TrimSpace(input.AudioURL) != "" {
@@ -246,6 +310,25 @@ func (c *Client) submitASR(ctx context.Context, action string, input ASRRequest)
 		return nil, err
 	}
 	return decodeASRTask(raw), nil
+}
+
+func (c *Client) DownloadSpeechAudio(ctx context.Context, key string) (*DownloadSpeechAudioResult, error) {
+	if strings.TrimSpace(key) == "" {
+		return nil, errors.New("storage key is required")
+	}
+	query := url.Values{}
+	query.Set("key", key)
+	endpoint := joinURL(c.speechURL, "api", "files", "download") + "?" + query.Encode()
+	raw, headers, err := c.requestBinary(ctx, http.MethodGet, endpoint, nil, nil)
+	if err != nil {
+		return nil, err
+	}
+	return &DownloadSpeechAudioResult{
+		Audio:       raw,
+		ContentType: headers.Get("Content-Type"),
+		FileName:    headerFilename(headers.Get("Content-Disposition")),
+		Headers:     headers,
+	}, nil
 }
 
 func decodeASRTask(raw map[string]any) *ASRTaskResponse {
@@ -297,4 +380,20 @@ func anyToInt64(value any) int64 {
 		}
 	}
 	return 0
+}
+
+func headerFilename(contentDisposition string) string {
+	trimmed := strings.TrimSpace(contentDisposition)
+	if trimmed == "" {
+		return ""
+	}
+	parts := strings.Split(trimmed, ";")
+	for _, part := range parts {
+		segment := strings.TrimSpace(part)
+		if !strings.HasPrefix(strings.ToLower(segment), "filename=") {
+			continue
+		}
+		return strings.Trim(strings.TrimSpace(strings.TrimPrefix(segment, "filename=")), `"`)
+	}
+	return ""
 }

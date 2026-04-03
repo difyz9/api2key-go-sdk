@@ -16,7 +16,7 @@ import (
 
 type config struct {
 	BaseAPIURL    string
-	TTSURL        string
+	SpeechURL     string
 	ServiceSecret string
 	Email         string
 	Password      string
@@ -52,8 +52,8 @@ func main() {
 		api2key.WithBaseAPIURL(cfg.BaseAPIURL),
 		api2key.WithServiceSecret(cfg.ServiceSecret),
 	}
-	if strings.TrimSpace(cfg.TTSURL) != "" {
-		options = append(options, api2key.WithTTSURL(cfg.TTSURL))
+	if strings.TrimSpace(cfg.SpeechURL) != "" {
+		options = append(options, api2key.WithSpeechURL(cfg.SpeechURL))
 	}
 	client := api2key.NewClient(options...)
 
@@ -76,10 +76,11 @@ func main() {
 	fmt.Println("api key created:", apiKeyResult.Key.KeyPrefix)
 
 	voices, err := client.ListVoices(ctx, api2key.ListVoicesRequest{
-		APIKey:   apiKeyResult.Key.Secret,
-		Provider: cfg.Provider,
-		Locale:   cfg.Locale,
-		Search:   cfg.Search,
+		ProjectID: cfg.ProjectID,
+		APIKey:    apiKeyResult.Key.Secret,
+		Provider:  cfg.Provider,
+		Locale:    cfg.Locale,
+		Search:    cfg.Search,
 	})
 	if err != nil {
 		log.Fatal(err)
@@ -94,15 +95,16 @@ func main() {
 
 	if cfg.DoSpeech {
 		result, err := client.SaveSpeechToFile(ctx, api2key.SynthesizeSpeechRequest{
-			APIKey:   apiKeyResult.Key.Secret,
-			Provider: cfg.Provider,
-			Text:     cfg.Text,
-			Voice:    cfg.Voice,
-			Locale:   cfg.Locale,
-			Rate:     1,
-			Volume:   100,
-			Pitch:    0,
-			Format:   cfg.Format,
+			ProjectID: cfg.ProjectID,
+			APIKey:    apiKeyResult.Key.Secret,
+			Provider:  cfg.Provider,
+			Text:      cfg.Text,
+			Voice:     cfg.Voice,
+			Locale:    cfg.Locale,
+			Rate:      1,
+			Volume:    100,
+			Pitch:     0,
+			Format:    cfg.Format,
 		}, cfg.Output)
 		if err != nil {
 			log.Fatal(err)
@@ -113,6 +115,7 @@ func main() {
 
 	if cfg.DoSRT {
 		request := api2key.ASRRequest{
+			ProjectID:       cfg.ProjectID,
 			APIKey:          apiKeyResult.Key.Secret,
 			AudioFilePath:   cfg.AudioFile,
 			AudioURL:        cfg.AudioURL,
@@ -128,7 +131,12 @@ func main() {
 		fmt.Println("srt task id:", result.TaskID)
 
 		if cfg.PollAsyncTask && result.TaskID != 0 {
-			polled, err := client.PollASRTask(ctx, apiKeyResult.Key.Secret, fmt.Sprint(result.TaskID), 2*time.Second, 30)
+			polled, err := client.PollASRTaskWithOptions(ctx, api2key.ASRTaskQueryRequest{
+				ProjectID: cfg.ProjectID,
+				APIKey:    apiKeyResult.Key.Secret,
+				TaskID:    fmt.Sprint(result.TaskID),
+				Provider:  request.Provider,
+			}, 2*time.Second, 30)
 			if err != nil {
 				log.Fatal(err)
 			}
@@ -162,7 +170,7 @@ func main() {
 func loadConfig() config {
 	var cfg config
 	flag.StringVar(&cfg.BaseAPIURL, "base-url", getenv("API2KEY_BASE_URL", api2key.DefaultBaseAPIURL), "base api url")
-	flag.StringVar(&cfg.TTSURL, "tts-url", getenv("API2KEY_TTS_URL", ""), "optional tts service url override")
+	flag.StringVar(&cfg.SpeechURL, "speech-url", getenv("API2KEY_SPEECH_URL", getenv("API2KEY_TTS_URL", "")), "optional speech root url override")
 	flag.StringVar(&cfg.ServiceSecret, "service-secret", getenv("API2KEY_SERVICE_SECRET", ""), "service secret for credits api")
 	flag.StringVar(&cfg.Email, "email", getenv("API2KEY_EMAIL", ""), "login email")
 	flag.StringVar(&cfg.Password, "password", getenv("API2KEY_PASSWORD", ""), "login password")
@@ -189,14 +197,14 @@ func loadConfig() config {
 	flag.BoolVar(&cfg.PollAsyncTask, "poll", getenvBool("API2KEY_EXAMPLE_POLL", true), "poll async asr task when task id is returned")
 	flag.Parse()
 	return cfg
-	}
+}
 
 func getenv(key, fallback string) string {
 	if value := strings.TrimSpace(os.Getenv(key)); value != "" {
 		return value
 	}
 	return fallback
-	}
+}
 
 func getenvBool(key string, fallback bool) bool {
 	value := strings.TrimSpace(strings.ToLower(os.Getenv(key)))
@@ -204,7 +212,7 @@ func getenvBool(key string, fallback bool) bool {
 		return fallback
 	}
 	return value == "1" || value == "true" || value == "yes" || value == "on"
-	}
+}
 
 func getenvInt(key string, fallback int) int {
 	value := strings.TrimSpace(os.Getenv(key))
@@ -216,7 +224,7 @@ func getenvInt(key string, fallback int) int {
 		return fallback
 	}
 	return parsed
-	}
+}
 
 func getenvDuration(key string, fallback time.Duration) time.Duration {
 	value := strings.TrimSpace(os.Getenv(key))
@@ -228,7 +236,7 @@ func getenvDuration(key string, fallback time.Duration) time.Duration {
 		return fallback
 	}
 	return parsed
-	}
+}
 
 func firstNLines(text string, count int) string {
 	lines := strings.Split(text, "\n")
@@ -236,4 +244,4 @@ func firstNLines(text string, count int) string {
 		return text
 	}
 	return strings.Join(lines[:count], "\n")
-	}
+}

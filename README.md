@@ -1,30 +1,29 @@
 # api2key Go SDK
 
-这个目录提供一个可复用的 Golang SDK，覆盖当前项目最常用的客户端能力：
+这个仓库提供一个可复用的 Go SDK，覆盖当前项目最常用的客户端能力：
 
 1. 用户登录
-2. 创建 API Key
+2. 创建和管理 API Key
 3. 获取语音列表
-4. 音频合成
-5. 音频转文字 / 转 SRT
+4. 文本转语音
+5. 音频转写 / 生成 SRT
 6. 异步 ASR 任务查询与轮询
-7. 用户积分扣减 / 预扣 / 确认 / 取消
+7. 下载已存储的合成音频
+8. 用户积分扣减 / 预扣 / 确认 / 取消
 
-## 安装方式
+## 安装与验证
 
-当前仓库内使用本地 module：
+当前仓库本身就是一个 Go module：
 
 ```bash
-cd examples/go/sdk
+cd api2key-go-sdk
 go test ./...
 ```
 
-如果你要放到自己的 Go 项目中，推荐直接复制 `api2key` 目录，或者后续再独立发布为单独仓库。
-
-## 包路径
+如果要在自己的项目里使用，直接引用 module 路径即可：
 
 ```go
-import "api2key-go-sdk/api2key"
+import "github.com/difyz9/api2key-go-sdk/api2key"
 ```
 
 ## 快速开始
@@ -38,18 +37,21 @@ import (
 	"log"
 	"time"
 
-	"api2key-go-sdk/api2key"
+	"github.com/difyz9/api2key-go-sdk/api2key"
 )
 
 func main() {
-	ctx := context.Background()
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+
 	client := api2key.NewClient(
 		api2key.WithBaseAPIURL("https://open.api2key.com"),
 	)
 
 	loginResult, err := client.Login(ctx, api2key.LoginRequest{
-		Email:    "user@example.com",
-		Password: "Test123456!",
+		Email:     "user@example.com",
+		Password:  "Test123456!",
+		ProjectID: "ytb2bili",
 	})
 	if err != nil {
 		log.Fatal(err)
@@ -63,32 +65,43 @@ func main() {
 	}
 
 	voices, err := client.ListVoices(ctx, api2key.ListVoicesRequest{
-		APIKey:   apiKeyResult.Key.Secret,
-		Provider: "azure",
-		Locale:   "zh-CN",
-		Search:   "Xiaoxiao",
+		ProjectID: "ytb2bili",
+		APIKey:    apiKeyResult.Key.Secret,
+		Provider:  "azure",
+		Locale:    "zh-CN",
+		Search:    "Xiaoxiao",
 	})
 	if err != nil {
 		log.Fatal(err)
 	}
 	fmt.Println("voices:", voices.Total)
 
-	_, err = client.SaveSpeechToFile(ctx, api2key.SynthesizeSpeechRequest{
-		APIKey:   apiKeyResult.Key.Secret,
-		Provider: "azure",
-		Text:     "你好，这是 SDK 调用测试。",
-		Voice:    "zh-CN-XiaoxiaoNeural",
-		Locale:   "zh-CN",
-		Rate:     1,
-		Volume:   100,
-		Pitch:    0,
-		Format:   "audio-24khz-96kbitrate-mono-mp3",
+	result, err := client.SaveSpeechToFile(ctx, api2key.SynthesizeSpeechRequest{
+		ProjectID: "ytb2bili",
+		APIKey:    apiKeyResult.Key.Secret,
+		Provider:  "azure",
+		Text:      "你好，这是 SDK 调用测试。",
+		Voice:     "zh-CN-XiaoxiaoNeural",
+		Locale:    "zh-CN",
+		Rate:      1,
+		Volume:    100,
+		Pitch:     0,
+		Format:    "audio-24khz-96kbitrate-mono-mp3",
 	}, "output.mp3")
 	if err != nil {
 		log.Fatal(err)
 	}
 
+	if result.StorageKey != "" {
+		downloaded, err := client.DownloadSpeechAudio(ctx, result.StorageKey)
+		if err != nil {
+			log.Fatal(err)
+		}
+		fmt.Println("downloaded bytes:", len(downloaded.Audio))
+	}
+
 	transcribeResult, err := client.AudioToSRT(ctx, api2key.ASRRequest{
+		ProjectID:       "ytb2bili",
 		APIKey:          apiKeyResult.Key.Secret,
 		AudioFilePath:   "sample.wav",
 		Provider:        "tencent",
@@ -99,11 +112,19 @@ func main() {
 		log.Fatal(err)
 	}
 
-	taskResult, err := client.PollASRTask(ctx, apiKeyResult.Key.Secret, fmt.Sprint(transcribeResult.TaskID), 2*time.Second, 30)
+	taskResult, err := client.PollASRTaskWithOptions(ctx, api2key.ASRTaskQueryRequest{
+		ProjectID: "ytb2bili",
+		APIKey:    apiKeyResult.Key.Secret,
+		TaskID:    fmt.Sprint(transcribeResult.TaskID),
+		Provider:  "tencent",
+	}, 2*time.Second, 30)
 	if err != nil {
 		log.Fatal(err)
 	}
 	fmt.Println("asr status:", taskResult.StatusStr)
+	if taskResult.SRT != "" {
+		fmt.Println(taskResult.SRT)
+	}
 
 	creditsResult, err := client.SpendCredits(ctx, api2key.SpendCreditsRequest{
 		UserID:      "user_123",
@@ -116,90 +137,99 @@ func main() {
 		log.Fatal(err)
 	}
 	fmt.Println("balance after:", creditsResult.BalanceAfter)
-	}
+}
 ```
 
 说明：
 
-- TTS / ASR 相关接口默认直接复用 `BaseAPIURL`，通过 `api2key-base-api` 暴露的桥接路由访问 `api2key-azure-tts`。
-- 生产环境下传 `https://open.api2key.com` 即可，不需要再单独配置 `https://tts.api2key.com`。
-- `WithTTSURL(...)` 仍然保留，主要用于本地调试、灰度环境或手动覆盖特殊部署。
-- `WithServiceSecret(...)` 只在调用积分接口时需要，单纯调用 TTS / ASR 不需要。
+- TTS / ASR 相关接口现在直接调用 `api2key-base-api` 的内置语音路由。
+- 生产环境只需要传 `https://open.api2key.com`，不需要再配置独立语音服务。
+- `WithSpeechURL(...)` 是当前推荐的语音根路径覆盖项，适合本地调试、灰度环境或特殊部署。
+- `WithTTSURL(...)` 仍然保留，作为兼容别名，不影响旧调用代码。
+- `WithServiceSecret(...)` 只在调用积分接口时需要，单独调用 TTS / ASR 不需要。
 
-	## 可运行示例
+## 可运行示例
 
-	仓库里带了一个可直接运行的示例程序：
+仓库里有两个示例：
 
-	- `example/main.go`
+- `example/main.go`：通用 CLI 风格示例，适合串联登录、建 key、查 voices、做 speech / SRT / credits。
+- `demo01/main.go`：更短的烟雾测试示例，默认会跑登录、建 key、语音合成和一次 ASR 轮询。
 
-	先进入目录：
+先进入仓库根目录：
 
-	```bash
-	cd examples/go/sdk
-	```
+```bash
+cd api2key-go-sdk
+```
 
-	只跑登录、创建 key、查询语音列表：
+只跑登录、创建 key、查询语音列表：
 
-	```bash
-	API2KEY_EMAIL=user@example.com \
-	API2KEY_PASSWORD='Test123456!' \
-	go run ./example
-	```
+```bash
+API2KEY_EMAIL=user@example.com \
+API2KEY_PASSWORD='Test123456!' \
+go run ./example
+```
 
-	连同语音合成一起跑：
+连同语音合成一起跑：
 
-	```bash
-	API2KEY_EMAIL=user@example.com \
-	API2KEY_PASSWORD='Test123456!' \
-	API2KEY_EXAMPLE_DO_SPEECH=true \
-	go run ./example -output ./example/output.mp3
-	```
+```bash
+API2KEY_EMAIL=user@example.com \
+API2KEY_PASSWORD='Test123456!' \
+API2KEY_PROJECT_ID=ytb2bili \
+API2KEY_EXAMPLE_DO_SPEECH=true \
+go run ./example -output ./example/output.mp3
+```
 
-	连同 SRT 转写一起跑：
+连同 SRT 转写一起跑：
 
-	```bash
-	API2KEY_EMAIL=user@example.com \
-	API2KEY_PASSWORD='Test123456!' \
-	API2KEY_EXAMPLE_DO_SRT=true \
-	API2KEY_AUDIO_FILE=/path/to/audio.wav \
-	go run ./example
-	```
+```bash
+API2KEY_EMAIL=user@example.com \
+API2KEY_PASSWORD='Test123456!' \
+API2KEY_PROJECT_ID=ytb2bili \
+API2KEY_EXAMPLE_DO_SRT=true \
+API2KEY_AUDIO_FILE=/path/to/audio.wav \
+go run ./example
+```
 
-	连同积分扣减一起跑：
+连同积分扣减一起跑：
 
-	```bash
-	API2KEY_EMAIL=user@example.com \
-	API2KEY_PASSWORD='Test123456!' \
-	API2KEY_SERVICE_SECRET=your-service-secret \
-	API2KEY_EXAMPLE_DO_CREDITS=true \
-	API2KEY_CREDITS_USER_ID=user_123 \
-	go run ./example
-	```
+```bash
+API2KEY_EMAIL=user@example.com \
+API2KEY_PASSWORD='Test123456!' \
+API2KEY_SERVICE_SECRET=your-service-secret \
+API2KEY_EXAMPLE_DO_CREDITS=true \
+API2KEY_CREDITS_USER_ID=user_123 \
+go run ./example
+```
 
-	如果你已经有现成 API Key，也可以直接只配一个入口地址来调 TTS：
+运行更短的 smoke demo：
 
-	```go
-	ctx := context.Background()
-	client := api2key.NewClient(
-		api2key.WithBaseAPIURL("https://open.api2key.com"),
-	)
+```bash
+API2KEY_EMAIL=user@example.com \
+API2KEY_PASSWORD='Test123456!' \
+API2KEY_PROJECT_ID=ytb2bili \
+API2KEY_SPEECH_URL=https://open.api2key.com \
+go run ./demo01
+```
 
-	voices, err := client.ListVoices(ctx, api2key.ListVoicesRequest{
-		APIKey:   "sk-your-api-key",
-		Provider: "azure",
-		Locale:   "zh-CN",
-	})
-	if err != nil {
-		log.Fatal(err)
-	}
-	_ = voices
-	```
+如果已经有现成 API Key，也可以直接跳过登录，只传入口地址和 key：
 
-	这个示例默认总会执行：登录、创建 API Key、查询语音列表。其余动作通过开关控制：
+```go
+ctx := context.Background()
+client := api2key.NewClient(
+	api2key.WithBaseAPIURL("https://open.api2key.com"),
+)
 
-	- `API2KEY_EXAMPLE_DO_SPEECH=true`
-	- `API2KEY_EXAMPLE_DO_SRT=true`
-	- `API2KEY_EXAMPLE_DO_CREDITS=true`
+voices, err := client.ListVoices(ctx, api2key.ListVoicesRequest{
+	ProjectID: "ytb2bili",
+	APIKey:    "sk-your-api-key",
+	Provider:  "azure",
+	Locale:    "zh-CN",
+})
+if err != nil {
+	log.Fatal(err)
+}
+_ = voices
+```
 
 ## API 概览
 
@@ -220,7 +250,10 @@ func main() {
 - `TranscribeAudio`
 - `AudioToSRT`
 - `GetASRTask`
+- `GetASRTaskWithOptions`
 - `PollASRTask`
+- `PollASRTaskWithOptions`
+- `DownloadSpeechAudio`
 
 ### 积分
 
@@ -231,4 +264,4 @@ func main() {
 
 ## 设计说明
 
-SDK 目前只依赖 Go 标准库，方便你直接拷到业务服务中使用。错误统一返回 `APIError`，可以通过 `errors.As` 读取 `StatusCode`、`Code` 和 `Balance`。
+SDK 目前只依赖 Go 标准库，方便直接集成到业务服务中。错误统一返回 `APIError`，可以通过 `errors.As` 读取 `StatusCode`、`Code` 和 `Balance`。

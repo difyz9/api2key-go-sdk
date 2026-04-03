@@ -18,13 +18,14 @@ import (
 
 const (
 	DefaultBaseAPIURL = "https://open.api2key.com"
-	DefaultTTSURL     = "https://tts.api2key.com"
+	DefaultSpeechURL  = "https://tts.api2key.com"
+	DefaultTTSURL     = DefaultSpeechURL
 	DefaultAPIPrefix  = "/api/v1"
 )
 
 type Client struct {
 	baseAPIURL    string
-	ttsURL        string
+	speechURL     string
 	apiPrefix     string
 	serviceSecret string
 	httpClient    *http.Client
@@ -32,6 +33,7 @@ type Client struct {
 
 type Config struct {
 	BaseAPIURL    string
+	SpeechURL     string
 	TTSURL        string
 	APIPrefix     string
 	ServiceSecret string
@@ -53,13 +55,16 @@ func NewClient(options ...Option) *Client {
 		config.HTTPClient = &http.Client{Timeout: 30 * time.Second}
 	}
 	baseAPIURL := strings.TrimRight(config.BaseAPIURL, "/")
-	ttsURL := strings.TrimRight(strings.TrimSpace(config.TTSURL), "/")
-	if ttsURL == "" {
-		ttsURL = deriveServiceBaseURL(baseAPIURL)
+	speechURL := strings.TrimRight(strings.TrimSpace(config.SpeechURL), "/")
+	if speechURL == "" {
+		speechURL = strings.TrimRight(strings.TrimSpace(config.TTSURL), "/")
+	}
+	if speechURL == "" {
+		speechURL = deriveServiceBaseURL(baseAPIURL)
 	}
 	return &Client{
 		baseAPIURL:    baseAPIURL,
-		ttsURL:        ttsURL,
+		speechURL:     speechURL,
 		apiPrefix:     normalizeAPIPrefix(config.APIPrefix),
 		serviceSecret: strings.TrimSpace(config.ServiceSecret),
 		httpClient:    config.HTTPClient,
@@ -72,8 +77,15 @@ func WithBaseAPIURL(rawURL string) Option {
 	}
 }
 
+func WithSpeechURL(rawURL string) Option {
+	return func(config *Config) {
+		config.SpeechURL = rawURL
+	}
+}
+
 func WithTTSURL(rawURL string) Option {
 	return func(config *Config) {
+		config.SpeechURL = rawURL
 		config.TTSURL = rawURL
 	}
 }
