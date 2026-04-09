@@ -150,10 +150,11 @@ func main() {
 
 ## 可运行示例
 
-仓库里有两个示例：
+仓库里有三个示例：
 
 - `example/main.go`：通用 CLI 风格示例，适合串联登录、建 key、查 voices、做 speech / SRT / credits。
 - `demo01/main.go`：更短的烟雾测试示例，默认会跑登录、建 key、语音合成和一次 ASR 轮询。
+- `subtitle_tts/main.go`：只依赖 `baseURL + apiKey` 的字幕转音频示例，适合直接把 `.srt` 或 `.txt` 文本合成音频。
 
 先进入仓库根目录：
 
@@ -230,6 +231,87 @@ if err != nil {
 }
 _ = voices
 ```
+
+## 字幕文本合成音频案例
+
+这个案例只需要两个核心参数：
+
+- `baseURL`
+- `apiKey`
+
+不需要再单独配置第二个 TTS URL。SDK 会基于 `WithBaseAPIURL(...)` 自动推导语音路由。
+
+示例源码见 `subtitle_tts/main.go`。
+
+### 适用输入
+
+- `.srt` 字幕文件：会自动跳过序号行和时间轴行
+- `.txt` 纯文本：会按正文直接合成
+
+### 最小示例
+
+```go
+package main
+
+import (
+	"context"
+	"log"
+	"time"
+
+	"github.com/difyz9/api2key-go-sdk/api2key"
+)
+
+func main() {
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	defer cancel()
+
+	client := api2key.NewClient(
+		api2key.WithBaseAPIURL("https://open.api2key.com"),
+	)
+
+	_, err := client.SaveSpeechToFile(ctx, api2key.SynthesizeSpeechRequest{
+		APIKey:   "sk-your-api-key",
+		Provider: "azure",
+		Text:     "第一句字幕。\n第二句字幕。\n第三句字幕。",
+		Voice:    "zh-CN-XiaoxiaoNeural",
+		Locale:   "zh-CN",
+		Format:   "audio-24khz-96kbitrate-mono-mp3",
+	}, "output.mp3")
+	if err != nil {
+		log.Fatal(err)
+	}
+}
+```
+
+### 直接运行仓库示例
+
+先准备一个字幕文件，例如 `subtitle_tts/subtitle.srt`。
+
+PowerShell:
+
+```powershell
+$env:API2KEY_BASE_URL = "https://open.api2key.com"
+$env:API2KEY_API_KEY = "sk-your-api-key"
+$env:API2KEY_INPUT = "./subtitle_tts/subtitle.srt"
+$env:API2KEY_OUTPUT = "./subtitle_tts/output.mp3"
+go run ./subtitle_tts
+```
+
+也可以显式指定发音人、语言和项目：
+
+```powershell
+$env:API2KEY_BASE_URL = "https://open.api2key.com"
+$env:API2KEY_API_KEY = "sk-your-api-key"
+$env:API2KEY_PROJECT_ID = "your-project-id"
+$env:API2KEY_PROVIDER = "azure"
+$env:API2KEY_VOICE = "zh-CN-XiaoxiaoNeural"
+$env:API2KEY_LOCALE = "zh-CN"
+$env:API2KEY_INPUT = "./subtitle_tts/subtitle.srt"
+$env:API2KEY_OUTPUT = "./subtitle_tts/output.mp3"
+go run ./subtitle_tts
+```
+
+运行成功后会输出结果文件路径，以及本次实际使用的 provider、voice、format 和扣费信息。
 
 ## API 概览
 
