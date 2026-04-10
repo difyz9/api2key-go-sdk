@@ -15,32 +15,38 @@ import (
 )
 
 type config struct {
-	BaseAPIURL    string
-	SpeechURL     string
-	ServiceSecret string
-	Email         string
-	Password      string
-	ProjectID     string
-	KeyName       string
-	Provider      string
-	Locale        string
-	Search        string
-	Voice         string
-	Text          string
-	Format        string
-	Output        string
-	AudioFile     string
-	AudioURL      string
-	EngineModel   string
-	SpendUserID   string
-	SpendAmount   int
-	SpendService  string
-	SpendTaskID   string
-	Timeout       time.Duration
-	DoSpeech      bool
-	DoSRT         bool
-	DoCredits     bool
-	PollAsyncTask bool
+	BaseAPIURL     string
+	SpeechURL      string
+	ServiceSecret  string
+	Email          string
+	Password       string
+	ProjectID      string
+	KeyName        string
+	Provider       string
+	Locale         string
+	Search         string
+	Voice          string
+	Text           string
+	Format         string
+	Output         string
+	AudioFile      string
+	AudioURL       string
+	EngineModel    string
+	SpendUserID    string
+	SpendAmount    int
+	SpendService   string
+	SpendTaskID    string
+	PaymentSubject string
+	PaymentDesc    string
+	PaymentAmount  float64
+	PaymentType    string
+	Timeout        time.Duration
+	DoSpeech       bool
+	DoSRT          bool
+	DoCredits      bool
+	DoDirectPay    bool
+	PollDirectPay  bool
+	PollAsyncTask  bool
 }
 
 func main() {
@@ -165,6 +171,35 @@ func main() {
 		fmt.Println("credits balance after:", creditsResult.BalanceAfter)
 		fmt.Println("credits idempotent:", creditsResult.Idempotent)
 	}
+
+	if cfg.DoDirectPay {
+		directPayment, err := client.CreateDirectPayment(ctx, loginResult.AccessToken, api2key.DirectPaymentCreateRequest{
+			Subject:     cfg.PaymentSubject,
+			Amount:      cfg.PaymentAmount,
+			Description: cfg.PaymentDesc,
+			ProjectID:   cfg.ProjectID,
+			PaymentType: cfg.PaymentType,
+		})
+		if err != nil {
+			log.Fatal(err)
+		}
+		fmt.Println("direct payment created:", directPayment.ID)
+		fmt.Println("direct payment order no:", directPayment.OrderNo)
+		fmt.Println("direct payment qr code:", directPayment.Data.QRCode)
+		fmt.Println("direct payment pay url:", directPayment.Data.PayURL)
+
+		if cfg.PollDirectPay {
+			paymentStatus, err := client.PollDirectPaymentStatus(ctx, loginResult.AccessToken, api2key.DirectPaymentQueryRequest{
+				DirectPaymentID: directPayment.ID,
+			}, 3*time.Second, 40)
+			if err != nil {
+				log.Fatal(err)
+			}
+			fmt.Println("direct payment local status:", paymentStatus.LocalStatus)
+			fmt.Println("direct payment unified status:", paymentStatus.UnifiedStatus)
+			fmt.Println("direct payment paid:", paymentStatus.Paid)
+		}
+	}
 }
 
 func loadConfig() config {
@@ -190,10 +225,16 @@ func loadConfig() config {
 	flag.IntVar(&cfg.SpendAmount, "spend-amount", getenvInt("API2KEY_CREDITS_AMOUNT", 10), "credits amount")
 	flag.StringVar(&cfg.SpendService, "spend-service", getenv("API2KEY_CREDITS_SERVICE", "ai_chat"), "credits service name")
 	flag.StringVar(&cfg.SpendTaskID, "spend-task-id", getenv("API2KEY_CREDITS_TASK_ID", fmt.Sprintf("sdk-example-%d", time.Now().Unix())), "credits task id")
+	flag.StringVar(&cfg.PaymentSubject, "payment-subject", getenv("API2KEY_PAYMENT_SUBJECT", "SDK 直付测试"), "direct payment subject")
+	flag.StringVar(&cfg.PaymentDesc, "payment-desc", getenv("API2KEY_PAYMENT_DESC", "api2key go sdk direct payment example"), "direct payment description")
+	flag.Float64Var(&cfg.PaymentAmount, "payment-amount", getenvFloat64("API2KEY_PAYMENT_AMOUNT", 0.01), "direct payment amount")
+	flag.StringVar(&cfg.PaymentType, "payment-type", getenv("API2KEY_PAYMENT_TYPE", api2key.DefaultDirectPaymentType), "direct payment type")
 	flag.DurationVar(&cfg.Timeout, "timeout", getenvDuration("API2KEY_TIMEOUT", 60*time.Second), "request timeout")
 	flag.BoolVar(&cfg.DoSpeech, "speech", getenvBool("API2KEY_EXAMPLE_DO_SPEECH", false), "run speech synthesis")
 	flag.BoolVar(&cfg.DoSRT, "srt", getenvBool("API2KEY_EXAMPLE_DO_SRT", false), "run audio to srt")
 	flag.BoolVar(&cfg.DoCredits, "credits", getenvBool("API2KEY_EXAMPLE_DO_CREDITS", false), "run spend credits")
+	flag.BoolVar(&cfg.DoDirectPay, "direct-pay", getenvBool("API2KEY_EXAMPLE_DO_DIRECT_PAY", false), "run direct payment create")
+	flag.BoolVar(&cfg.PollDirectPay, "poll-direct-pay", getenvBool("API2KEY_EXAMPLE_POLL_DIRECT_PAY", false), "poll direct payment status after create")
 	flag.BoolVar(&cfg.PollAsyncTask, "poll", getenvBool("API2KEY_EXAMPLE_POLL", true), "poll async asr task when task id is returned")
 	flag.Parse()
 	return cfg
@@ -220,6 +261,18 @@ func getenvInt(key string, fallback int) int {
 		return fallback
 	}
 	parsed, err := strconv.Atoi(value)
+	if err != nil {
+		return fallback
+	}
+	return parsed
+}
+
+func getenvFloat64(key string, fallback float64) float64 {
+	value := strings.TrimSpace(os.Getenv(key))
+	if value == "" {
+		return fallback
+	}
+	parsed, err := strconv.ParseFloat(value, 64)
 	if err != nil {
 		return fallback
 	}

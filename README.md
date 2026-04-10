@@ -10,6 +10,7 @@
 6. 异步 ASR 任务查询与轮询
 7. 下载已存储的合成音频
 8. 用户积分扣减 / 预扣 / 确认 / 取消
+9. 直付支付创建 / 查询 / 轮询
 
 ## 安装与验证
 
@@ -137,6 +138,19 @@ func main() {
 		log.Fatal(err)
 	}
 	fmt.Println("balance after:", creditsResult.BalanceAfter)
+
+	directPayment, err := client.CreateDirectPayment(ctx, loginResult.AccessToken, api2key.DirectPaymentCreateRequest{
+		Subject:     "SDK 直付测试",
+		Amount:      0.01,
+		Description: "Go SDK direct payment example",
+		ProjectID:   "ytb2bili",
+		PaymentType: "wechat",
+	})
+	if err != nil {
+		log.Fatal(err)
+	}
+	fmt.Println("direct payment order:", directPayment.OrderNo)
+	fmt.Println("direct payment qr code:", directPayment.Data.QRCode)
 }
 ```
 
@@ -147,6 +161,7 @@ func main() {
 - `WithSpeechURL(...)` 是当前推荐的语音根路径覆盖项，适合本地调试、灰度环境或特殊部署。
 - `WithTTSURL(...)` 仍然保留，作为兼容别名，不影响旧调用代码。
 - `WithServiceSecret(...)` 只在调用积分接口时需要，单独调用 TTS / ASR 不需要。
+- 直付支付接口使用登录返回的 `accessToken`，不使用 `service secret` 或 `api key`。
 
 ## 可运行示例
 
@@ -199,6 +214,29 @@ API2KEY_PASSWORD='Test123456!' \
 API2KEY_SERVICE_SECRET=your-service-secret \
 API2KEY_EXAMPLE_DO_CREDITS=true \
 API2KEY_CREDITS_USER_ID=user_123 \
+go run ./example
+```
+
+连同直付支付一起跑：
+
+```bash
+API2KEY_EMAIL=user@example.com \
+API2KEY_PASSWORD='Test123456!' \
+API2KEY_PROJECT_ID=ytb2bili \
+API2KEY_EXAMPLE_DO_DIRECT_PAY=true \
+API2KEY_PAYMENT_AMOUNT=0.01 \
+go run ./example
+```
+
+创建后立即轮询支付状态：
+
+```bash
+API2KEY_EMAIL=user@example.com \
+API2KEY_PASSWORD='Test123456!' \
+API2KEY_PROJECT_ID=ytb2bili \
+API2KEY_EXAMPLE_DO_DIRECT_PAY=true \
+API2KEY_EXAMPLE_POLL_DIRECT_PAY=true \
+API2KEY_PAYMENT_AMOUNT=0.01 \
 go run ./example
 ```
 
