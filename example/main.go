@@ -29,6 +29,9 @@ type config struct {
 	Text           string
 	Format         string
 	Output         string
+	StorageKey     string
+	DownloadName   string
+	VideoID        string
 	AudioFile      string
 	AudioURL       string
 	EngineModel    string
@@ -101,22 +104,26 @@ func main() {
 
 	if cfg.DoSpeech {
 		result, err := client.SaveSpeechToFile(ctx, api2key.SynthesizeSpeechRequest{
-			ProjectID: cfg.ProjectID,
-			APIKey:    apiKeyResult.Key.Secret,
-			Provider:  cfg.Provider,
-			Text:      cfg.Text,
-			Voice:     cfg.Voice,
-			Locale:    cfg.Locale,
-			Rate:      1,
-			Volume:    100,
-			Pitch:     0,
-			Format:    cfg.Format,
+			ProjectID:        cfg.ProjectID,
+			APIKey:           apiKeyResult.Key.Secret,
+			Provider:         cfg.Provider,
+			Text:             cfg.Text,
+			Voice:            cfg.Voice,
+			Locale:           cfg.Locale,
+			Rate:             1,
+			Volume:           100,
+			Pitch:            0,
+			Format:           cfg.Format,
+			StorageKey:       resolveSpeechStorageKey(cfg),
+			DownloadFilename: resolveSpeechDownloadName(cfg),
 		}, cfg.Output)
 		if err != nil {
 			log.Fatal(err)
 		}
 		fmt.Println("speech saved:", cfg.Output)
 		fmt.Println("speech charged:", result.Charged)
+		fmt.Println("speech storage key:", result.StorageKey)
+		fmt.Println("speech download url:", result.DownloadURL)
 	}
 
 	if cfg.DoSRT {
@@ -218,6 +225,9 @@ func loadConfig() config {
 	flag.StringVar(&cfg.Text, "text", getenv("API2KEY_TEXT", "你好，这是 SDK example。"), "speech text")
 	flag.StringVar(&cfg.Format, "format", getenv("API2KEY_FORMAT", "audio-24khz-96kbitrate-mono-mp3"), "speech output format")
 	flag.StringVar(&cfg.Output, "output", getenv("API2KEY_OUTPUT", filepath.Join("example", "output.mp3")), "speech output path")
+	flag.StringVar(&cfg.StorageKey, "storage-key", getenv("API2KEY_STORAGE_KEY", ""), "optional custom remote storage key, e.g. video_123/index_0001.mp3")
+	flag.StringVar(&cfg.DownloadName, "download-name", getenv("API2KEY_DOWNLOAD_FILENAME", ""), "optional custom download filename, e.g. index_0001.mp3")
+	flag.StringVar(&cfg.VideoID, "video-id", getenv("API2KEY_VIDEO_ID", "sdk-example-video"), "remote video id used to build default storage key when storage-key is empty")
 	flag.StringVar(&cfg.AudioFile, "audio-file", getenv("API2KEY_AUDIO_FILE", ""), "audio file path for srt")
 	flag.StringVar(&cfg.AudioURL, "audio-url", getenv("API2KEY_AUDIO_URL", ""), "audio url for srt")
 	flag.StringVar(&cfg.EngineModel, "engine-model", getenv("API2KEY_ENGINE_MODEL", "16k_zh"), "asr engine model")
@@ -238,6 +248,39 @@ func loadConfig() config {
 	flag.BoolVar(&cfg.PollAsyncTask, "poll", getenvBool("API2KEY_EXAMPLE_POLL", true), "poll async asr task when task id is returned")
 	flag.Parse()
 	return cfg
+}
+
+func resolveSpeechStorageKey(cfg config) string {
+	if value := strings.TrimSpace(cfg.StorageKey); value != "" {
+		return value
+	}
+	videoID := strings.Trim(strings.TrimSpace(cfg.VideoID), "/")
+	if videoID == "" {
+		videoID = "sdk-example-video"
+	}
+	extension := outputFileExtension(cfg.Format)
+	return fmt.Sprintf("%s/index_0001%s", videoID, extension)
+}
+
+func resolveSpeechDownloadName(cfg config) string {
+	if value := strings.TrimSpace(cfg.DownloadName); value != "" {
+		return value
+	}
+	return "index_0001" + outputFileExtension(cfg.Format)
+}
+
+func outputFileExtension(format string) string {
+	normalized := strings.ToLower(strings.TrimSpace(format))
+	switch {
+	case strings.Contains(normalized, "mp3"):
+		return ".mp3"
+	case strings.Contains(normalized, "wav"):
+		return ".wav"
+	case strings.Contains(normalized, "ogg"):
+		return ".ogg"
+	default:
+		return ".audio"
+	}
 }
 
 func getenv(key, fallback string) string {

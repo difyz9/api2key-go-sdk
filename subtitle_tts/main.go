@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
 	"time"
 
@@ -30,6 +31,7 @@ type config struct {
 	Input     string
 	Output    string
 	Prefix    string
+	VideoID   string
 	Timeout   time.Duration
 	Rate      float64
 	Volume    float64
@@ -44,7 +46,7 @@ type subtitleEntry struct {
 func defaultTestConfig() config {
 	return config{
 		BaseURL:   "https://v2.api2key.com",
-		APIKey:    "sk-43d392747decb79409d9ssss6s58cd0229xxxxxe52d872e28a9997259",
+		APIKey:    "sk-43d392747decb79409d96635e58cd0229efeefe42045e2e52d872e28a9997259",
 		ProjectID: "",
 		Provider:  "auto",
 		Search:    "",
@@ -53,7 +55,8 @@ func defaultTestConfig() config {
 		Format:    "audio-24khz-96kbitrate-mono-mp3",
 		Input:     "001.srt",
 		Output:    "output",
-		Prefix:    "",
+		Prefix:    "hell_",
+		VideoID:   "video_demo",
 		Timeout:   3 * time.Minute,
 		Rate:      1,
 		Volume:    100,
@@ -103,20 +106,31 @@ func main() {
 	}
 
 	extension := outputFileExtension(cfg.Format)
+	videoID := strings.TrimSpace(cfg.VideoID)
+	if videoID == "" {
+		videoID = strings.TrimSpace(cfg.Prefix)
+	}
+	if videoID == "" {
+		videoID = "video_demo"
+	}
 	totalCharged := make([]string, 0, len(entries))
 	for _, entry := range entries {
 		outputPath := filepath.Join(outputDir, cfg.Prefix+entry.Index+extension)
+		storageFileName := buildStorageFileName(entry.Index, extension)
+		storageKey := strings.Trim(strings.TrimSpace(videoID), "/") + "/" + storageFileName
 		result, err := client.SaveSpeechToFile(ctx, api2key.SynthesizeSpeechRequest{
-			ProjectID: cfg.ProjectID,
-			APIKey:    cfg.APIKey,
-			Provider:  provider,
-			Text:      entry.Text,
-			Voice:     voice,
-			Locale:    cfg.Locale,
-			Rate:      cfg.Rate,
-			Volume:    cfg.Volume,
-			Pitch:     cfg.Pitch,
-			Format:    cfg.Format,
+			ProjectID:        cfg.ProjectID,
+			APIKey:           cfg.APIKey,
+			Provider:         provider,
+			Text:             entry.Text,
+			Voice:            voice,
+			Locale:           cfg.Locale,
+			Rate:             cfg.Rate,
+			Volume:           cfg.Volume,
+			Pitch:            cfg.Pitch,
+			Format:           cfg.Format,
+			StorageKey:       storageKey,
+			DownloadFilename: storageFileName,
 		}, outputPath)
 		if err != nil {
 			log.Fatalf("synthesize subtitle %s failed: %v", entry.Index, err)
@@ -124,7 +138,7 @@ func main() {
 		if strings.TrimSpace(result.Charged) != "" {
 			totalCharged = append(totalCharged, fmt.Sprintf("%s=%s", entry.Index, result.Charged))
 		}
-		fmt.Printf("[%s] ok -> %s\n", entry.Index, outputPath)
+		fmt.Printf("[%s] ok -> %s | remote=%s\n", entry.Index, outputPath, result.StorageKey)
 	}
 
 	fmt.Println("subtitle batch synthesis ok")
@@ -134,6 +148,7 @@ func main() {
 	fmt.Println("provider:", provider)
 	fmt.Println("voice:", voice)
 	fmt.Println("format:", cfg.Format)
+	fmt.Println("video id:", videoID)
 	fmt.Println("segments:", len(entries))
 	if len(totalCharged) > 0 {
 		fmt.Println("charged:", strings.Join(totalCharged, ", "))
@@ -153,12 +168,25 @@ func loadConfig() config {
 	flag.StringVar(&cfg.Input, "input", cfg.Input, "input subtitle file path (.srt or .txt)")
 	flag.StringVar(&cfg.Output, "output", cfg.Output, "output directory path")
 	flag.StringVar(&cfg.Prefix, "prefix", cfg.Prefix, "optional file name prefix")
+	flag.StringVar(&cfg.VideoID, "video-id", cfg.VideoID, "remote storage video id used in storageKey, e.g. video_123")
 	flag.DurationVar(&cfg.Timeout, "timeout", cfg.Timeout, "request timeout")
 	flag.Float64Var(&cfg.Rate, "rate", cfg.Rate, "tts speaking rate")
 	flag.Float64Var(&cfg.Volume, "volume", cfg.Volume, "tts volume")
 	flag.Float64Var(&cfg.Pitch, "pitch", cfg.Pitch, "tts pitch")
 	flag.Parse()
 	return cfg
+}
+
+func buildStorageFileName(index string, extension string) string {
+	trimmed := strings.TrimSpace(index)
+	if trimmed == "" {
+		return "index_0001" + extension
+	}
+	parsed, err := strconv.Atoi(trimmed)
+	if err == nil {
+		return fmt.Sprintf("index_%04d%s", parsed, extension)
+	}
+	return "index_" + trimmed + extension
 }
 
 func resolveTTSProfile(ctx context.Context, client *api2key.Client, cfg config) (string, string, error) {

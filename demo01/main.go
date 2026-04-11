@@ -24,6 +24,9 @@ func main() {
 	locale := getenv("API2KEY_LOCALE", "zh-CN")
 	voice := getenv("API2KEY_VOICE", "zh-CN-XiaoxiaoNeural")
 	text := getenv("API2KEY_TEXT", "你好，这是 demo01 的集成语音调用。")
+	videoID := getenv("API2KEY_VIDEO_ID", "demo01-video")
+	storageKey := getenv("API2KEY_STORAGE_KEY", fmt.Sprintf("%s/index_0001.mp3", strings.Trim(videoID, "/")))
+	downloadName := getenv("API2KEY_DOWNLOAD_FILENAME", "index_0001.mp3")
 	outputPath := getenv("API2KEY_OUTPUT", filepath.Join("demo01", "output.mp3"))
 	audioFile := getenv("API2KEY_AUDIO_FILE", outputPath)
 	audioURL := getenv("API2KEY_AUDIO_URL", "")
@@ -72,21 +75,25 @@ func main() {
 	fmt.Println("voices:", voices.Total)
 
 	result, err := client.SaveSpeechToFile(ctx, api2key.SynthesizeSpeechRequest{
-		ProjectID: projectID,
-		APIKey:    apiKeyResult.Key.Secret,
-		Provider:  provider,
-		Text:      text,
-		Voice:     voice,
-		Locale:    locale,
-		Rate:      1,
-		Volume:    100,
-		Pitch:     0,
-		Format:    "audio-24khz-96kbitrate-mono-mp3",
+		ProjectID:        projectID,
+		APIKey:           apiKeyResult.Key.Secret,
+		Provider:         provider,
+		Text:             text,
+		Voice:            voice,
+		Locale:           locale,
+		Rate:             1,
+		Volume:           100,
+		Pitch:            0,
+		Format:           "audio-24khz-96kbitrate-mono-mp3",
+		StorageKey:       storageKey,
+		DownloadFilename: downloadName,
 	}, outputPath)
 	if err != nil {
 		log.Fatal(err)
 	}
 	fmt.Println("speech saved:", outputPath)
+	fmt.Println("speech storage key:", result.StorageKey)
+	fmt.Println("speech download url:", result.DownloadURL)
 	if strings.TrimSpace(result.StorageKey) != "" {
 		downloaded, downloadErr := client.DownloadSpeechAudio(ctx, result.StorageKey)
 		if downloadErr != nil {

@@ -88,6 +88,8 @@ func main() {
 		Volume:    100,
 		Pitch:     0,
 		Format:    "audio-24khz-96kbitrate-mono-mp3",
+		StorageKey: "video_123/index_0001.mp3",
+		DownloadFilename: "index_0001.mp3",
 	}, "output.mp3")
 	if err != nil {
 		log.Fatal(err)
@@ -158,10 +160,47 @@ func main() {
 
 - TTS / ASR 相关接口现在直接调用 `api2key-base-api` 的内置语音路由。
 - 生产环境只需要传 `https://open.api2key.com`，不需要再配置独立语音服务。
+- `SynthesizeSpeechRequest` 支持 `StorageKey` 和 `DownloadFilename`，可把远端音频固定存成 `video_id/index_0001.mp3` 这种结构。
 - `WithSpeechURL(...)` 是当前推荐的语音根路径覆盖项，适合本地调试、灰度环境或特殊部署。
 - `WithTTSURL(...)` 仍然保留，作为兼容别名，不影响旧调用代码。
 - `WithServiceSecret(...)` 只在调用积分接口时需要，单独调用 TTS / ASR 不需要。
 - 直付支付接口使用登录返回的 `accessToken`，不使用 `service secret` 或 `api key`。
+
+## 自定义存储路径
+
+如果你希望服务端返回稳定的下载地址，例如：
+
+```text
+https://open.api2key.com/api/files/download/video_123/index_0168.mp3
+```
+
+调用时传入：
+
+```go
+result, err := client.SynthesizeSpeech(ctx, api2key.SynthesizeSpeechRequest{
+	ProjectID: "ytb2bili",
+	APIKey:    apiKey,
+	Provider:  "azure",
+	Text:      "不要忽略基础知识。",
+	Voice:     "zh-CN-XiaoxiaoNeural",
+	Locale:    "zh-CN",
+	Format:    "audio-24khz-96kbitrate-mono-mp3",
+	StorageKey: "video_123/index_0168.mp3",
+	DownloadFilename: "index_0168.mp3",
+})
+if err != nil {
+	log.Fatal(err)
+}
+
+fmt.Println(result.StorageKey)
+fmt.Println(result.DownloadURL)
+```
+
+下载时直接传 `StorageKey` 即可，SDK 会优先走新的路径式下载：
+
+```go
+downloaded, err := client.DownloadSpeechAudio(ctx, result.StorageKey)
+```
 
 ## 可运行示例
 
@@ -170,6 +209,7 @@ func main() {
 - `example/main.go`：通用 CLI 风格示例，适合串联登录、建 key、查 voices、做 speech / SRT / credits。
 - `demo01/main.go`：更短的烟雾测试示例，默认会跑登录、建 key、语音合成和一次 ASR 轮询。
 - `subtitle_tts/main.go`：只依赖 `baseURL + apiKey` 的字幕转音频示例，适合直接把 `.srt` 或 `.txt` 文本合成音频。
+- `subtitle_tts/main.go` 默认会把远端存储路径组织成 `<video-id>/index_0001.mp3` 这种格式。
 
 先进入仓库根目录：
 
@@ -191,7 +231,20 @@ go run ./example
 API2KEY_EMAIL=user@example.com \
 API2KEY_PASSWORD='Test123456!' \
 API2KEY_PROJECT_ID=ytb2bili \
+API2KEY_VIDEO_ID=video_123 \
 API2KEY_EXAMPLE_DO_SPEECH=true \
+go run ./example -output ./example/output.mp3
+```
+
+如果希望显式指定远端路径，也可以直接传：
+
+```bash
+API2KEY_EMAIL=user@example.com \
+API2KEY_PASSWORD='Test123456!' \
+API2KEY_PROJECT_ID=ytb2bili \
+API2KEY_EXAMPLE_DO_SPEECH=true \
+API2KEY_STORAGE_KEY='video_123/index_0168.mp3' \
+API2KEY_DOWNLOAD_FILENAME='index_0168.mp3' \
 go run ./example -output ./example/output.mp3
 ```
 
@@ -246,6 +299,7 @@ go run ./example
 API2KEY_EMAIL=user@example.com \
 API2KEY_PASSWORD='Test123456!' \
 API2KEY_PROJECT_ID=ytb2bili \
+API2KEY_VIDEO_ID=demo-video \
 API2KEY_SPEECH_URL=https://open.api2key.com \
 go run ./demo01
 ```

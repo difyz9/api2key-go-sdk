@@ -34,17 +34,19 @@ type ListVoicesRequest struct {
 }
 
 type SynthesizeSpeechRequest struct {
-	ProjectID string  `json:"-"`
-	APIKey    string  `json:"-"`
-	Provider  string  `json:"provider,omitempty"`
-	Text      string  `json:"text"`
-	Voice     string  `json:"voice,omitempty"`
-	Locale    string  `json:"locale,omitempty"`
-	Rate      float64 `json:"rate,omitempty"`
-	Volume    float64 `json:"volume,omitempty"`
-	Pitch     float64 `json:"pitch,omitempty"`
-	Format    string  `json:"format,omitempty"`
-	Style     string  `json:"style,omitempty"`
+	ProjectID        string  `json:"-"`
+	APIKey           string  `json:"-"`
+	Provider         string  `json:"provider,omitempty"`
+	Text             string  `json:"text"`
+	Voice            string  `json:"voice,omitempty"`
+	Locale           string  `json:"locale,omitempty"`
+	Rate             float64 `json:"rate,omitempty"`
+	Volume           float64 `json:"volume,omitempty"`
+	Pitch            float64 `json:"pitch,omitempty"`
+	Format           string  `json:"format,omitempty"`
+	Style            string  `json:"style,omitempty"`
+	StorageKey       string  `json:"storageKey,omitempty"`
+	DownloadFilename string  `json:"downloadFilename,omitempty"`
 }
 
 type SynthesizeSpeechResult struct {
@@ -155,6 +157,12 @@ func (c *Client) SynthesizeSpeech(ctx context.Context, input SynthesizeSpeechReq
 	}
 	if strings.TrimSpace(input.Style) != "" {
 		body["style"] = input.Style
+	}
+	if strings.TrimSpace(input.StorageKey) != "" {
+		body["storageKey"] = input.StorageKey
+	}
+	if strings.TrimSpace(input.DownloadFilename) != "" {
+		body["downloadFilename"] = input.DownloadFilename
 	}
 	raw, headers, err := c.requestBinary(ctx, http.MethodPost, endpoint, map[string]string{"x-api-key": input.APIKey}, body)
 	if err != nil {
@@ -312,13 +320,24 @@ func (c *Client) submitASR(ctx context.Context, action string, input ASRRequest)
 	return decodeASRTask(raw), nil
 }
 
+func escapeStorageKeyPath(key string) string {
+	parts := strings.Split(strings.TrimSpace(key), "/")
+	escaped := make([]string, 0, len(parts))
+	for _, part := range parts {
+		part = strings.TrimSpace(part)
+		if part == "" {
+			continue
+		}
+		escaped = append(escaped, url.PathEscape(part))
+	}
+	return strings.Join(escaped, "/")
+}
+
 func (c *Client) DownloadSpeechAudio(ctx context.Context, key string) (*DownloadSpeechAudioResult, error) {
 	if strings.TrimSpace(key) == "" {
 		return nil, errors.New("storage key is required")
 	}
-	query := url.Values{}
-	query.Set("key", key)
-	endpoint := joinURL(c.speechURL, "api", "files", "download") + "?" + query.Encode()
+	endpoint := joinURL(c.speechURL, "api", "files", "download") + "/" + escapeStorageKeyPath(key)
 	raw, headers, err := c.requestBinary(ctx, http.MethodGet, endpoint, nil, nil)
 	if err != nil {
 		return nil, err
