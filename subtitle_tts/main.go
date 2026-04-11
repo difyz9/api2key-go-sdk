@@ -46,7 +46,7 @@ type subtitleEntry struct {
 func defaultTestConfig() config {
 	return config{
 		BaseURL:   "https://v2.api2key.com",
-		APIKey:    "sk-43d392747decb79409d96635e58cd0229efeefe42045e2e52d872e28a9997259",
+		APIKey:    "sk-xxxxx", // replace with your API key starting with sk-
 		ProjectID: "",
 		Provider:  "auto",
 		Search:    "",
