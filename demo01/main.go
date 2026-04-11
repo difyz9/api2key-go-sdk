@@ -56,15 +56,15 @@ func main() {
 
 	fmt.Println("login ok")
 
-	apiKeyResult, err := ensureDemoAPIKey(ctx, client, loginResult.AccessToken, "sdk-demo")
+	apiKeySecret, err := ensureDemoAPIKey(ctx, client, loginResult.AccessToken, "sdk-demo")
 	if err != nil {
 		log.Fatal(err)
 	}
-	fmt.Println("api key ready:", apiKeyResult.Key.KeyPrefix)
+	fmt.Println("api key ready: sdk-demo")
 
 	voices, err := client.ListVoices(ctx, api2key.ListVoicesRequest{
 		ProjectID: projectID,
-		APIKey:    apiKeyResult.Key.Secret,
+		APIKey:    apiKeySecret,
 		Provider:  provider,
 		Locale:    locale,
 		Search:    "Xiaoxiao",
@@ -76,7 +76,7 @@ func main() {
 
 	result, err := client.SaveSpeechToFile(ctx, api2key.SynthesizeSpeechRequest{
 		ProjectID:        projectID,
-		APIKey:           apiKeyResult.Key.Secret,
+		APIKey:           apiKeySecret,
 		Provider:         provider,
 		Text:             text,
 		Voice:            voice,
@@ -109,7 +109,7 @@ func main() {
 	if strings.TrimSpace(audioURL) != "" {
 		transcribeResult, err := client.AudioToSRT(ctx, api2key.ASRRequest{
 			ProjectID:       projectID,
-			APIKey:          apiKeyResult.Key.Secret,
+			APIKey:          apiKeySecret,
 			AudioURL:        audioURL,
 			Provider:        "tencent",
 			EngineModelType: "16k_zh",
@@ -121,7 +121,7 @@ func main() {
 
 		taskResult, err := client.PollASRTaskWithOptions(ctx, api2key.ASRTaskQueryRequest{
 			ProjectID: projectID,
-			APIKey:    apiKeyResult.Key.Secret,
+			APIKey:    apiKeySecret,
 			TaskID:    fmt.Sprint(transcribeResult.TaskID),
 			Provider:  "tencent",
 		}, 2*time.Second, 30)
@@ -132,7 +132,7 @@ func main() {
 	} else if _, statErr := os.Stat(audioFile); statErr == nil {
 		transcribeResult, err := client.AudioToSRT(ctx, api2key.ASRRequest{
 			ProjectID:       projectID,
-			APIKey:          apiKeyResult.Key.Secret,
+			APIKey:          apiKeySecret,
 			AudioFilePath:   audioFile,
 			Provider:        "tencent",
 			EngineModelType: "16k_zh",
@@ -144,7 +144,7 @@ func main() {
 
 		taskResult, err := client.PollASRTaskWithOptions(ctx, api2key.ASRTaskQueryRequest{
 			ProjectID: projectID,
-			APIKey:    apiKeyResult.Key.Secret,
+			APIKey:    apiKeySecret,
 			TaskID:    fmt.Sprint(transcribeResult.TaskID),
 			Provider:  "tencent",
 		}, 2*time.Second, 30)
@@ -183,36 +183,13 @@ func getenv(key, fallback string) string {
 	return fallback
 }
 
-func ensureDemoAPIKey(ctx context.Context, client *api2key.Client, accessToken, keyName string) (*api2key.CreateAPIKeyResponse, error) {
-	created, err := client.CreateAPIKey(ctx, accessToken, api2key.CreateAPIKeyRequest{Name: keyName})
-	if err == nil {
-		return created, nil
+func ensureDemoAPIKey(ctx context.Context, client *api2key.Client, accessToken, keyName string) (string, error) {
+	ensured, err := client.EnsureAPIKey(ctx, accessToken, api2key.CreateAPIKeyRequest{Name: keyName})
+	if err != nil {
+		return "", err
 	}
-
-	var apiErr *api2key.APIError
-	if !errors.As(err, &apiErr) || apiErr.StatusCode != 400 || apiErr.Message != "每个用户最多创建 10 个 API Key" {
-		return nil, err
+	if !ensured.Created {
+		return "", fmt.Errorf("api key %q already exists, but its secret cannot be queried again; reuse the secret saved when it was first created, or delete the old key and rerun", keyName)
 	}
-
-	keys, listErr := client.ListAPIKeys(ctx, accessToken)
-	if listErr != nil {
-		return nil, fmt.Errorf("list api keys after create limit hit: %w", listErr)
-	}
-	if len(keys.Keys) == 0 {
-		return nil, err
-	}
-
-	candidate := keys.Keys[len(keys.Keys)-1]
-	for index := len(keys.Keys) - 1; index >= 0; index-- {
-		if keys.Keys[index].Name == keyName {
-			candidate = keys.Keys[index]
-			break
-		}
-	}
-
-	if deleteErr := client.DeleteAPIKey(ctx, accessToken, candidate.ID); deleteErr != nil {
-		return nil, fmt.Errorf("delete stale api key %s: %w", candidate.ID, deleteErr)
-	}
-
-	return client.CreateAPIKey(ctx, accessToken, api2key.CreateAPIKeyRequest{Name: keyName})
+	return ensured.Secret, nil
 }

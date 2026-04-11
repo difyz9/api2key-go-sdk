@@ -58,16 +58,19 @@ func main() {
 		log.Fatal(err)
 	}
 
-	apiKeyResult, err := client.CreateAPIKey(ctx, loginResult.AccessToken, api2key.CreateAPIKeyRequest{
+	apiKeyResult, err := client.EnsureAPIKey(ctx, loginResult.AccessToken, api2key.CreateAPIKeyRequest{
 		Name: "sdk-demo",
 	})
 	if err != nil {
 		log.Fatal(err)
 	}
+	if !apiKeyResult.SecretAvailable {
+		log.Fatal("API key already exists, but the historical secret cannot be queried again; persist it when creating the key for the first time")
+	}
 
 	voices, err := client.ListVoices(ctx, api2key.ListVoicesRequest{
 		ProjectID: "ytb2bili",
-		APIKey:    apiKeyResult.Key.Secret,
+		APIKey:    apiKeyResult.Secret,
 		Provider:  "azure",
 		Locale:    "zh-CN",
 		Search:    "Xiaoxiao",
@@ -79,7 +82,7 @@ func main() {
 
 	result, err := client.SaveSpeechToFile(ctx, api2key.SynthesizeSpeechRequest{
 		ProjectID: "ytb2bili",
-		APIKey:    apiKeyResult.Key.Secret,
+		APIKey:    apiKeyResult.Secret,
 		Provider:  "azure",
 		Text:      "你好，这是 SDK 调用测试。",
 		Voice:     "zh-CN-XiaoxiaoNeural",
@@ -105,7 +108,7 @@ func main() {
 
 	transcribeResult, err := client.AudioToSRT(ctx, api2key.ASRRequest{
 		ProjectID:       "ytb2bili",
-		APIKey:          apiKeyResult.Key.Secret,
+		APIKey:          apiKeyResult.Secret,
 		AudioFilePath:   "sample.wav",
 		Provider:        "tencent",
 		EngineModelType: "16k_zh",
@@ -117,7 +120,7 @@ func main() {
 
 	taskResult, err := client.PollASRTaskWithOptions(ctx, api2key.ASRTaskQueryRequest{
 		ProjectID: "ytb2bili",
-		APIKey:    apiKeyResult.Key.Secret,
+		APIKey:    apiKeyResult.Secret,
 		TaskID:    fmt.Sprint(transcribeResult.TaskID),
 		Provider:  "tencent",
 	}, 2*time.Second, 30)
@@ -204,8 +207,18 @@ downloaded, err := client.DownloadSpeechAudio(ctx, result.StorageKey)
 
 ## 可运行示例
 
-仓库里有三个示例：
+如果你的目标只是“先获取用户的 apikey 列表，列表为空才创建一个；列表不为空就直接取一个返回，而且不要重复创建”，推荐直接使用 [ensure_apikey/main.go](/Users/apple/opt/difyz_0329/05/api2key-go-sdk/ensure_apikey/main.go) 这个独立案例：
 
+1. 先登录拿 `accessToken`
+2. 调用 `ListAPIKeys` 获取当前用户的 apikey 列表
+3. 列表不为空时，直接取一个现有 key 返回，不再创建新的 key
+4. 列表为空时，调用 `CreateAPIKey` 创建一个新的 key 并返回
+
+注意：现在服务端列表接口会返回 `secret`。这个案例会优先复用“列表里已有明文 secret 的 key”；如果现有 key 都没有明文 `secret`，就会新创建一个 key，并返回新 key 的完整 apikey。
+
+仓库里有四个示例：
+
+- `ensure_apikey/main.go`：独立 apikey 案例，先查用户 apikey 列表，有就直接取一个，没有才创建，避免重复创建。
 - `example/main.go`：通用 CLI 风格示例，适合串联登录、建 key、查 voices、做 speech / SRT / credits。
 - `demo01/main.go`：更短的烟雾测试示例，默认会跑登录、建 key、语音合成和一次 ASR 轮询。
 - `subtitle_tts/main.go`：只依赖 `baseURL + apiKey` 的字幕转音频示例，适合直接把 `.srt` 或 `.txt` 文本合成音频。
@@ -217,7 +230,26 @@ downloaded, err := client.DownloadSpeechAudio(ctx, result.StorageKey)
 cd api2key-go-sdk
 ```
 
-只跑登录、创建 key、查询语音列表：
+只跑独立的 apikey 案例：
+
+```bash
+API2KEY_EMAIL=user@example.com \
+API2KEY_PASSWORD='Test123456!' \
+API2KEY_KEY_NAME='sdk-example-key' \
+go run ./ensure_apikey
+```
+
+如果你想指定新建时使用的 key 名称和项目：
+
+```bash
+API2KEY_EMAIL=user@example.com \
+API2KEY_PASSWORD='Test123456!' \
+API2KEY_KEY_NAME='sdk-example-key' \
+API2KEY_PROJECT_ID='your-project-id' \
+go run ./ensure_apikey
+```
+
+通用 CLI 示例仍然保留在 `example/main.go`，只跑登录、创建 key、查询语音列表：
 
 ```bash
 API2KEY_EMAIL=user@example.com \

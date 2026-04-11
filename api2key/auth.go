@@ -41,6 +41,7 @@ type UserAPIKey struct {
 	ID         string `json:"id"`
 	Name       string `json:"name"`
 	KeyPrefix  string `json:"keyPrefix"`
+	Secret     string `json:"secret,omitempty"`
 	Active     bool   `json:"active"`
 	LastUsedAt *int64 `json:"lastUsedAt,omitempty"`
 	CreatedAt  int64  `json:"createdAt"`
@@ -54,6 +55,15 @@ type ListAPIKeysResponse struct {
 type UpdateAPIKeyRequest struct {
 	Name   *string `json:"name,omitempty"`
 	Active *bool   `json:"active,omitempty"`
+}
+
+var ErrAPIKeySecretUnavailable = errors.New("api key secret is only returned when the key is created")
+
+type EnsureAPIKeyResponse struct {
+	Key             UserAPIKey `json:"key"`
+	Secret          string     `json:"secret,omitempty"`
+	Created         bool       `json:"created"`
+	SecretAvailable bool       `json:"secretAvailable"`
 }
 
 func (c *Client) Login(ctx context.Context, input LoginRequest) (*LoginResponse, error) {
@@ -127,6 +137,74 @@ func (c *Client) DeleteAPIKey(ctx context.Context, accessToken, keyID string) er
 	return c.requestJSON(ctx, http.MethodDelete, endpoint, bearerHeaders(accessToken), nil, nil)
 }
 
+func (c *Client) FindAPIKeyByName(ctx context.Context, accessToken, keyName string) (*UserAPIKey, error) {
+	if strings.TrimSpace(accessToken) == "" {
+		return nil, errors.New("access token is required")
+	}
+	keyName = strings.TrimSpace(keyName)
+	if keyName == "" {
+		return nil, errors.New("key name is required")
+	}
+
+	keys, err := c.ListAPIKeys(ctx, accessToken)
+	if err != nil {
+		return nil, err
+	}
+
+	var candidate *UserAPIKey
+	for _, key := range keys.Keys {
+		if key.Name != keyName {
+			continue
+		}
+		if candidate == nil || preferAPIKey(key, *candidate) {
+			selected := key
+			candidate = &selected
+		}
+	}
+
+	return candidate, nil
+}
+
+func (c *Client) EnsureAPIKey(ctx context.Context, accessToken string, input CreateAPIKeyRequest) (*EnsureAPIKeyResponse, error) {
+	keyName := strings.TrimSpace(input.Name)
+	if keyName == "" {
+		return nil, errors.New("api key name is required")
+	}
+
+	existing, err := c.FindAPIKeyByName(ctx, accessToken, keyName)
+	if err != nil {
+		return nil, err
+	}
+	if existing != nil {
+		return &EnsureAPIKeyResponse{
+			Key:             *existing,
+			Secret:          existing.Secret,
+			Created:         false,
+			SecretAvailable: strings.TrimSpace(existing.Secret) != "",
+		}, nil
+	}
+
+	created, err := c.CreateAPIKey(ctx, accessToken, CreateAPIKeyRequest{Name: keyName})
+	if err != nil {
+		return nil, err
+	}
+
+	return &EnsureAPIKeyResponse{
+		Key: UserAPIKey{
+			ID:        created.Key.ID,
+			Name:      created.Key.Name,
+			KeyPrefix: created.Key.KeyPrefix,
+			Secret:    created.Key.Secret,
+			Active:    true,
+			CreatedAt: created.Key.CreatedAt,
+			UpdatedAt: created.Key.CreatedAt,
+		},
+		Secret:          created.Key.Secret,
+		Created:         true,
+		SecretAvailable: true,
+	}, nil
+}
+
 func (c *Client) LoginAndCreateAPIKey(ctx context.Context, loginRequest LoginRequest, createRequest CreateAPIKeyRequest) (*CreateAPIKeyResponse, error) {
 	loginResult, err := c.Login(ctx, loginRequest)
 	if err != nil {
@@ -137,4 +215,14 @@ func (c *Client) LoginAndCreateAPIKey(ctx context.Context, loginRequest LoginReq
 
 func bearerHeaders(accessToken string) map[string]string {
 	return map[string]string{"Authorization": "Bearer " + strings.TrimSpace(accessToken)}
+}
+
+func preferAPIKey(current, candidate UserAPIKey) bool {
+	if current.Active != candidate.Active {
+		return current.Active
+	}
+	if current.UpdatedAt != candidate.UpdatedAt {
+		return current.UpdatedAt > candidate.UpdatedAt
+	}
+	return current.CreatedAt > candidate.CreatedAt
 }

@@ -85,12 +85,12 @@ func ensureAPIKey(ctx context.Context, client *api2key.Client, accessToken strin
 	if err != nil {
 		return nil, err
 	}
-	if len(keys.Keys) > 0 {
-		picked := pickAPIKey(keys.Keys)
+	if picked, ok := pickAPIKeyWithSecret(keys.Keys); ok {
 		return &resolvedAPIKey{
 			ID:        picked.ID,
 			Name:      picked.Name,
 			KeyPrefix: picked.KeyPrefix,
+			Secret:    picked.Secret,
 			Source:    "existing",
 			Created:   false,
 			ListCount: len(keys.Keys),
@@ -137,6 +137,25 @@ func pickAPIKey(keys []api2key.UserAPIKey) api2key.UserAPIKey {
 		}
 	}
 	return picked
+}
+
+func pickAPIKeyWithSecret(keys []api2key.UserAPIKey) (api2key.UserAPIKey, bool) {
+	if len(keys) == 0 {
+		return api2key.UserAPIKey{}, false
+	}
+
+	var candidates []api2key.UserAPIKey
+	for _, key := range keys {
+		if strings.TrimSpace(key.Secret) == "" {
+			continue
+		}
+		candidates = append(candidates, key)
+	}
+	if len(candidates) == 0 {
+		return api2key.UserAPIKey{}, false
+	}
+
+	return pickAPIKey(candidates), true
 }
 
 func displayAPIKey(apiKey *resolvedAPIKey) string {
