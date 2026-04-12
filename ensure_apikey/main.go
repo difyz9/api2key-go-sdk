@@ -61,6 +61,7 @@ func main() {
 func loadConfig() config {
 
 
+
 	var cfg config
 	flag.StringVar(&cfg.BaseAPIURL, "base-url", getenv("API2KEY_BASE_URL", api2key.DefaultBaseAPIURL), "base api url")
 	flag.StringVar(&cfg.Email, "email", getenv("API2KEY_EMAIL", ""), "login email")
