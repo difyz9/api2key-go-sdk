@@ -167,6 +167,7 @@ func main() {
 - `WithSpeechURL(...)` 是当前推荐的语音根路径覆盖项，适合本地调试、灰度环境或特殊部署。
 - `WithTTSURL(...)` 仍然保留，作为兼容别名，不影响旧调用代码。
 - `WithServiceSecret(...)` 只在调用积分接口时需要，单独调用 TTS / ASR 不需要。
+- 积分相关接口现在要求显式传 `ProjectID`，因为服务端已切换到项目维度积分账户。
 - 直付支付接口使用登录返回的 `accessToken`，不使用 `service secret` 或 `api key`。
 
 ## 自定义存储路径

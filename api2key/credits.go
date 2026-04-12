@@ -8,6 +8,7 @@ import (
 )
 
 type SpendCreditsRequest struct {
+	ProjectID   string `json:"projectId"`
 	UserID      string `json:"userId"`
 	Amount      int    `json:"amount"`
 	Service     string `json:"service"`
@@ -16,20 +17,25 @@ type SpendCreditsRequest struct {
 }
 
 type SpendCreditsResponse struct {
-	BalanceAfter int  `json:"balanceAfter"`
-	Idempotent   bool `json:"idempotent,omitempty"`
+	BalanceAfter int    `json:"balanceAfter"`
+	Idempotent   bool   `json:"idempotent,omitempty"`
+	ScopeType    string `json:"scopeType,omitempty"`
+	ProjectID    string `json:"projectId,omitempty"`
 }
 
 type ReserveCreditsRequest struct {
-	UserID  string `json:"userId"`
-	TaskID  string `json:"taskId"`
-	Service string `json:"service"`
-	Amount  int    `json:"amount"`
+	ProjectID string `json:"projectId"`
+	UserID    string `json:"userId"`
+	TaskID    string `json:"taskId"`
+	Service   string `json:"service"`
+	Amount    int    `json:"amount"`
 }
 
 type ReserveCreditsResponse struct {
 	ReservationID string `json:"reservation_id"`
 	Idempotent    bool   `json:"idempotent,omitempty"`
+	ScopeType     string `json:"scopeType,omitempty"`
+	ProjectID     string `json:"projectId,omitempty"`
 }
 
 type ConfirmCreditsResponse struct {
@@ -44,6 +50,9 @@ type CancelCreditsResponse struct {
 func (c *Client) SpendCredits(ctx context.Context, input SpendCreditsRequest) (*SpendCreditsResponse, error) {
 	if err := c.requireServiceSecret(); err != nil {
 		return nil, err
+	}
+	if strings.TrimSpace(input.ProjectID) == "" {
+		return nil, errors.New("project id is required")
 	}
 	if strings.TrimSpace(input.UserID) == "" {
 		return nil, errors.New("user id is required")
@@ -66,6 +75,9 @@ func (c *Client) SpendCredits(ctx context.Context, input SpendCreditsRequest) (*
 func (c *Client) ReserveCredits(ctx context.Context, input ReserveCreditsRequest) (*ReserveCreditsResponse, error) {
 	if err := c.requireServiceSecret(); err != nil {
 		return nil, err
+	}
+	if strings.TrimSpace(input.ProjectID) == "" {
+		return nil, errors.New("project id is required")
 	}
 	if strings.TrimSpace(input.UserID) == "" {
 		return nil, errors.New("user id is required")
