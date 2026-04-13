@@ -66,13 +66,13 @@ func loadConfig() config {
 	flag.StringVar(&cfg.BaseAPIURL, "base-url", getenv("API2KEY_BASE_URL", api2key.DefaultBaseAPIURL), "base api url")
 	flag.StringVar(&cfg.Email, "email", getenv("API2KEY_EMAIL", ""), "login email")
 	flag.StringVar(&cfg.Password, "password", getenv("API2KEY_PASSWORD", ""), "login password")
-	flag.StringVar(&cfg.ProjectID, "project-id", getenv("API2KEY_PROJECT_ID", ""), "optional project id")
+	flag.StringVar(&cfg.ProjectID, "project-id", getenv("API2KEY_PROJECT_ID", ""), "required project id used during login")
 	flag.StringVar(&cfg.KeyName, "key-name", getenv("API2KEY_KEY_NAME", "sdk-example-key"), "api key name used when a new key must be created")
 	flag.DurationVar(&cfg.Timeout, "timeout", 30*time.Second, "request timeout")
 	flag.Parse()
 
-	if strings.TrimSpace(cfg.Email) == "" || strings.TrimSpace(cfg.Password) == "" {
-		log.Fatal("API2KEY_EMAIL and API2KEY_PASSWORD are required")
+	if strings.TrimSpace(cfg.Email) == "" || strings.TrimSpace(cfg.Password) == "" || strings.TrimSpace(cfg.ProjectID) == "" {
+		log.Fatal("API2KEY_EMAIL, API2KEY_PASSWORD and API2KEY_PROJECT_ID are required")
 	}
 	if strings.TrimSpace(cfg.KeyName) == "" {
 		log.Fatal("API2KEY_KEY_NAME is required")

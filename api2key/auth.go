@@ -11,6 +11,7 @@ import (
 type LoginRequest struct {
 	Email     string `json:"email"`
 	Password  string `json:"password"`
+	// ProjectID is only required during login to establish the initial project-scoped session.
 	ProjectID string `json:"projectId,omitempty"`
 }
 
@@ -22,6 +23,7 @@ type LoginResponse struct {
 }
 
 type CreateAPIKeyRequest struct {
+	// Name is user-facing only; the backend derives project scope from the current JWT.
 	Name string `json:"name,omitempty"`
 }
 
@@ -73,9 +75,13 @@ func (c *Client) Login(ctx context.Context, input LoginRequest) (*LoginResponse,
 	if strings.TrimSpace(input.Password) == "" {
 		return nil, errors.New("password is required")
 	}
+	if strings.TrimSpace(input.ProjectID) == "" {
+		return nil, errors.New("project id is required")
+	}
 	var out LoginResponse
 	endpoint := joinURL(c.baseAPIURL, c.apiPrefix, "auth", "login")
-	if err := c.requestJSON(ctx, http.MethodPost, endpoint, nil, input, &out); err != nil {
+	headers := map[string]string{"X-Project-Id": input.ProjectID}
+	if err := c.requestJSON(ctx, http.MethodPost, endpoint, headers, input, &out); err != nil {
 		return nil, err
 	}
 	if strings.TrimSpace(out.AccessToken) == "" {

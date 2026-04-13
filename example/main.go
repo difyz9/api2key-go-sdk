@@ -216,7 +216,7 @@ func loadConfig() config {
 	flag.StringVar(&cfg.ServiceSecret, "service-secret", getenv("API2KEY_SERVICE_SECRET", ""), "service secret for credits api")
 	flag.StringVar(&cfg.Email, "email", getenv("API2KEY_EMAIL", ""), "login email")
 	flag.StringVar(&cfg.Password, "password", getenv("API2KEY_PASSWORD", ""), "login password")
-	flag.StringVar(&cfg.ProjectID, "project-id", getenv("API2KEY_PROJECT_ID", ""), "optional project id")
+	flag.StringVar(&cfg.ProjectID, "project-id", getenv("API2KEY_PROJECT_ID", ""), "required project id used during login")
 	flag.StringVar(&cfg.KeyName, "key-name", getenv("API2KEY_KEY_NAME", "sdk-example-key"), "created api key name")
 	flag.StringVar(&cfg.Provider, "provider", getenv("API2KEY_PROVIDER", "azure"), "tts provider")
 	flag.StringVar(&cfg.Locale, "locale", getenv("API2KEY_LOCALE", "zh-CN"), "tts locale")
@@ -247,6 +247,9 @@ func loadConfig() config {
 	flag.BoolVar(&cfg.PollDirectPay, "poll-direct-pay", getenvBool("API2KEY_EXAMPLE_POLL_DIRECT_PAY", false), "poll direct payment status after create")
 	flag.BoolVar(&cfg.PollAsyncTask, "poll", getenvBool("API2KEY_EXAMPLE_POLL", true), "poll async asr task when task id is returned")
 	flag.Parse()
+	if strings.TrimSpace(cfg.Email) == "" || strings.TrimSpace(cfg.Password) == "" || strings.TrimSpace(cfg.ProjectID) == "" {
+		log.Fatal("API2KEY_EMAIL, API2KEY_PASSWORD and API2KEY_PROJECT_ID are required")
+	}
 	return cfg
 }
 

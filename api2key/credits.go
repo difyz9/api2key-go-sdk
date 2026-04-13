@@ -8,6 +8,7 @@ import (
 )
 
 type SpendCreditsRequest struct {
+	// ProjectID is required for service-to-service credits mutations.
 	ProjectID   string `json:"projectId"`
 	UserID      string `json:"userId"`
 	Amount      int    `json:"amount"`
@@ -24,6 +25,7 @@ type SpendCreditsResponse struct {
 }
 
 type ReserveCreditsRequest struct {
+	// ProjectID is required for service-to-service credits mutations.
 	ProjectID string `json:"projectId"`
 	UserID    string `json:"userId"`
 	TaskID    string `json:"taskId"`

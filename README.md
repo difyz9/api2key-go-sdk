@@ -29,6 +29,11 @@ import "github.com/difyz9/api2key-go-sdk/api2key"
 
 ## 快速开始
 
+建议先按两类场景理解 Go SDK：
+
+1. 用户态：登录时显式指定 `ProjectID`，登录后创建 API Key 等用户侧能力默认跟随当前 token 项目。
+2. 服务态：积分扣减 / 预扣等内部接口继续显式传 `ProjectID`，并要求 `WithServiceSecret(...)`。
+
 ```go
 package main
 
@@ -133,6 +138,7 @@ func main() {
 	}
 
 	creditsResult, err := client.SpendCredits(ctx, api2key.SpendCreditsRequest{
+		ProjectID:   "ytb2bili",
 		UserID:      "user_123",
 		Amount:      10,
 		Service:     "ai_chat",
@@ -167,8 +173,66 @@ func main() {
 - `WithSpeechURL(...)` 是当前推荐的语音根路径覆盖项，适合本地调试、灰度环境或特殊部署。
 - `WithTTSURL(...)` 仍然保留，作为兼容别名，不影响旧调用代码。
 - `WithServiceSecret(...)` 只在调用积分接口时需要，单独调用 TTS / ASR 不需要。
-- 积分相关接口现在要求显式传 `ProjectID`，因为服务端已切换到项目维度积分账户。
+- 用户侧登录后，`CreateAPIKey` / `EnsureAPIKey` 默认跟随当前 JWT 中的项目上下文，不需要再额外显式传 `ProjectID`。
+- 积分相关接口仍然要求显式传 `ProjectID`，因为它们是服务端调用接口，走 `X-Service-Secret`。
 - 直付支付接口使用登录返回的 `accessToken`，不使用 `service secret` 或 `api key`。
+
+## 最小调用模型
+
+### 1. 用户态
+
+用户态最小闭环：
+
+1. 登录时显式传 `ProjectID`
+2. 服务端返回带 `projectId` 的 token
+3. `CreateAPIKey` / `EnsureAPIKey` 默认跟随该 token 项目
+
+最小示例：
+
+```go
+loginResult, err := client.Login(ctx, api2key.LoginRequest{
+	Email:     "user@example.com",
+	Password:  "Test123456!",
+	ProjectID: "ytb2bili",
+})
+if err != nil {
+	log.Fatal(err)
+}
+
+apiKeyResult, err := client.CreateAPIKey(ctx, loginResult.AccessToken, api2key.CreateAPIKeyRequest{
+	Name: "sdk-demo",
+})
+if err != nil {
+	log.Fatal(err)
+}
+```
+
+### 2. 服务态
+
+服务态最小闭环：
+
+1. 用 `WithServiceSecret(...)` 初始化 client
+2. 显式传 `ProjectID`
+3. 调用 `SpendCredits` / `ReserveCredits`
+
+最小示例：
+
+```go
+serviceClient := api2key.NewClient(
+	api2key.WithBaseAPIURL("https://open.api2key.com"),
+	api2key.WithServiceSecret("your-service-secret"),
+)
+
+_, err = serviceClient.SpendCredits(ctx, api2key.SpendCreditsRequest{
+	ProjectID: "ytb2bili",
+	UserID:    "user_123",
+	Amount:    10,
+	Service:   "ai_chat",
+})
+if err != nil {
+	log.Fatal(err)
+}
+```
 
 ## 自定义存储路径
 
@@ -240,7 +304,7 @@ API2KEY_KEY_NAME='sdk-example-key' \
 go run ./ensure_apikey
 ```
 
-如果你想指定新建时使用的 key 名称和项目：
+运行 `ensure_apikey` 时，项目 ID 现在是登录必填项：
 
 ```bash
 API2KEY_EMAIL=user@example.com \
@@ -255,6 +319,7 @@ go run ./ensure_apikey
 ```bash
 API2KEY_EMAIL=user@example.com \
 API2KEY_PASSWORD='Test123456!' \
+API2KEY_PROJECT_ID='your-project-id' \
 go run ./example
 ```
 

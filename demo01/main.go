@@ -36,6 +36,9 @@ func main() {
 	if email == "" || password == "" {
 		log.Fatal("API2KEY_EMAIL and API2KEY_PASSWORD are required")
 	}
+	if projectID == "" {
+		log.Fatal("API2KEY_PROJECT_ID is required")
+	}
 
 	options := []api2key.Option{
 		api2key.WithBaseAPIURL(baseURL),
