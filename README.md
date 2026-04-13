@@ -1,3 +1,12 @@
+		api2key.WithBaseAPIURL("https://v2.api2key.com"),
+		生产环境只需要传 `https://v2.api2key.com`，不需要再配置独立语音服务。
+	api2key.WithBaseAPIURL("https://v2.api2key.com"),
+API2KEY_SPEECH_URL=https://v2.api2key.com \
+	api2key.WithBaseAPIURL("https://v2.api2key.com"),
+		api2key.WithBaseAPIURL("https://v2.api2key.com"),
+$env:API2KEY_BASE_URL = "https://v2.api2key.com"
+$env:API2KEY_BASE_URL = "https://v2.api2key.com"
+$env:API2KEY_BASE_URL = "https://v2.api2key.com"
 # api2key Go SDK
 
 这个仓库提供一个可复用的 Go SDK，覆盖当前项目最常用的客户端能力：
@@ -137,6 +146,11 @@ func main() {
 		fmt.Println(taskResult.SRT)
 	}
 
+	balanceBefore, err := client.GetCreditsBalance(ctx, loginResult.AccessToken)
+	if err != nil {
+		log.Fatal(err)
+	}
+
 	creditsResult, err := client.SpendCredits(ctx, api2key.SpendCreditsRequest{
 		ProjectID:   "ytb2bili",
 		UserID:      "user_123",
@@ -149,6 +163,7 @@ func main() {
 		log.Fatal(err)
 	}
 	fmt.Println("balance after:", creditsResult.BalanceAfter)
+	fmt.Println("user balance before:", balanceBefore.Balance)
 
 	directPayment, err := client.CreateDirectPayment(ctx, loginResult.AccessToken, api2key.DirectPaymentCreateRequest{
 		Subject:     "SDK 直付测试",
@@ -286,7 +301,7 @@ downloaded, err := client.DownloadSpeechAudio(ctx, result.StorageKey)
 - `ensure_apikey/main.go`：独立 apikey 案例，先查用户 apikey 列表，有就直接取一个，没有才创建，避免重复创建。
 - `example/main.go`：通用 CLI 风格示例，适合串联登录、建 key、查 voices、做 speech / SRT / credits。
 - `demo01/main.go`：更短的烟雾测试示例，默认会跑登录、建 key、语音合成和一次 ASR 轮询。
-- `subtitle_tts/main.go`：只依赖 `baseURL + apiKey` 的字幕转音频示例，适合直接把 `.srt` 或 `.txt` 文本合成音频。
+- `subtitle_tts/main.go`：登录后自动加载或创建用户 API Key，再把 `.srt` 或 `.txt` 文本逐段合成音频，并打印积分余额前后变化。
 - `subtitle_tts/main.go` 默认会把远端存储路径组织成 `<video-id>/index_0001.mp3` 这种格式。
 
 先进入仓库根目录：
@@ -424,14 +439,30 @@ _ = voices
 
 ## 字幕文本合成音频案例
 
-这个案例只需要两个核心参数：
+这个案例默认走用户态闭环：
 
-- `baseURL`
-- `apiKey`
+1. 邮箱登录
+2. 自动查询或创建同名 API Key
+3. 逐段把字幕文本合成音频
+4. 打印用户积分余额前后变化，用于确认 TTS 是否消耗积分
 
-不需要再单独配置第二个 TTS URL。SDK 会基于 `WithBaseAPIURL(...)` 自动推导语音路由。
+如果你已经有现成 API Key，也可以直接传 `API2KEY_API_KEY` 跳过登录。
 
 示例源码见 `subtitle_tts/main.go`。
+
+仓库里已经放了可直接 `source` 的模板：[subtitle_tts/.env.example](/Users/apple/opt/difyz_0329/0412/api2key-go-sdk/subtitle_tts/.env.example)。
+
+在 macOS / Linux 下，可以直接这样运行：
+
+```bash
+cd api2key-go-sdk
+set -a
+source ./subtitle_tts/.env.example
+set +a
+go run ./subtitle_tts
+```
+
+如果你已经有现成的 `sk-...`，只要把模板里的 `API2KEY_API_KEY` 填上，同时保留 `API2KEY_PROJECT_ID`，示例就会跳过登录，直接执行字幕合成。
 
 ### 适用输入
 
@@ -459,8 +490,28 @@ func main() {
 		api2key.WithBaseAPIURL("https://open.api2key.com"),
 	)
 
-	_, err := client.SaveSpeechToFile(ctx, api2key.SynthesizeSpeechRequest{
-		APIKey:   "sk-your-api-key",
+	loginResult, err := client.Login(ctx, api2key.LoginRequest{
+		Email:     "user@example.com",
+		Password:  "Test123456!",
+		ProjectID: "your-project-id",
+	})
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	ensured, err := client.EnsureAPIKey(ctx, loginResult.AccessToken, api2key.CreateAPIKeyRequest{Name: "subtitle-tts"})
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	balanceBefore, err := client.GetCreditsBalance(ctx, loginResult.AccessToken)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	_, err = client.SaveSpeechToFile(ctx, api2key.SynthesizeSpeechRequest{
+		ProjectID: "your-project-id",
+		APIKey:    ensured.Secret,
 		Provider: "azure",
 		Text:     "第一句字幕。\n第二句字幕。\n第三句字幕。",
 		Voice:    "zh-CN-XiaoxiaoNeural",
@@ -470,44 +521,68 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
+
+	balanceAfter, err := client.GetCreditsBalance(ctx, loginResult.AccessToken)
+	if err != nil {
+		log.Fatal(err)
+	}
+	log.Println("credits delta:", balanceBefore.Balance-balanceAfter.Balance)
 }
 ```
 
 ### 直接运行仓库示例
 
-先准备一个字幕文件，例如 `subtitle_tts/subtitle.srt`。
+先准备一个字幕文件，例如 `subtitle_tts/001.srt`，或者直接修改模板里的 `API2KEY_INPUT`。
 
 PowerShell:
 
 ```powershell
 $env:API2KEY_BASE_URL = "https://open.api2key.com"
-$env:API2KEY_API_KEY = "sk-your-api-key"
+$env:API2KEY_EMAIL = "user@example.com"
+$env:API2KEY_PASSWORD = "Test123456!"
+$env:API2KEY_PROJECT_ID = "your-project-id"
+$env:API2KEY_KEY_NAME = "subtitle-tts"
 $env:API2KEY_INPUT = "./subtitle_tts/subtitle.srt"
-$env:API2KEY_OUTPUT = "./subtitle_tts/output.mp3"
+$env:API2KEY_OUTPUT = "./subtitle_tts/output"
 go run ./subtitle_tts
 ```
 
-也可以显式指定发音人、语言和项目：
+也可以显式指定发音人、语言和远端视频目录：
 
 ```powershell
 $env:API2KEY_BASE_URL = "https://open.api2key.com"
-$env:API2KEY_API_KEY = "sk-your-api-key"
+$env:API2KEY_EMAIL = "user@example.com"
+$env:API2KEY_PASSWORD = "Test123456!"
 $env:API2KEY_PROJECT_ID = "your-project-id"
+$env:API2KEY_KEY_NAME = "subtitle-tts"
 $env:API2KEY_PROVIDER = "azure"
 $env:API2KEY_VOICE = "zh-CN-XiaoxiaoNeural"
 $env:API2KEY_LOCALE = "zh-CN"
+$env:API2KEY_VIDEO_ID = "video_123"
 $env:API2KEY_INPUT = "./subtitle_tts/subtitle.srt"
-$env:API2KEY_OUTPUT = "./subtitle_tts/output.mp3"
+$env:API2KEY_OUTPUT = "./subtitle_tts/output"
 go run ./subtitle_tts
 ```
 
-运行成功后会输出结果文件路径，以及本次实际使用的 provider、voice、format 和扣费信息。
+如果想跳过登录，也可以显式传一个现成 API Key：
+
+```powershell
+$env:API2KEY_BASE_URL = "https://open.api2key.com"
+$env:API2KEY_PROJECT_ID = "your-project-id"
+$env:API2KEY_API_KEY = "sk-your-api-key"
+$env:API2KEY_INPUT = "./subtitle_tts/subtitle.srt"
+$env:API2KEY_OUTPUT = "./subtitle_tts/output"
+go run ./subtitle_tts
+```
+
+运行成功后会输出每段音频文件路径、本次实际使用的 provider、voice、format、每段 `charged` 信息，以及登录态下的积分余额前后变化。
 
 ## API 概览
 
 ### 认证与 API Key
 
 - `Login`
+- `GetCreditsBalance`
 - `CreateAPIKey`
 - `ListAPIKeys`
 - `UpdateAPIKey`

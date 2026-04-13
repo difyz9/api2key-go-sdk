@@ -20,22 +20,25 @@ import (
 var subtitleIndexPattern = regexp.MustCompile(`^\d+$`)
 
 type config struct {
-	BaseURL   string
-	APIKey    string
-	ProjectID string
-	Provider  string
-	Search    string
-	Voice     string
-	Locale    string
-	Format    string
-	Input     string
-	Output    string
-	Prefix    string
-	VideoID   string
-	Timeout   time.Duration
-	Rate      float64
-	Volume    float64
-	Pitch     float64
+	BaseURL    string
+	Email      string
+	Password   string
+	ProjectID  string
+	APIKey     string
+	APIKeyName string
+	Provider   string
+	Search     string
+	Voice      string
+	Locale     string
+	Format     string
+	Input      string
+	Output     string
+	Prefix     string
+	VideoID    string
+	Timeout    time.Duration
+	Rate       float64
+	Volume     float64
+	Pitch      float64
 }
 
 type subtitleEntry struct {
@@ -45,34 +48,31 @@ type subtitleEntry struct {
 
 func defaultTestConfig() config {
 	return config{
-		BaseURL:   "https://v2.api2key.com",
-		APIKey:    "sk-xxxxx", // replace with your API key starting with sk-
-		ProjectID: "",
-		Provider:  "auto",
-		Search:    "",
-		Voice:     "zh-CN-XiaoxiaoNeural",
-		Locale:    "zh-CN",
-		Format:    "audio-24khz-96kbitrate-mono-mp3",
-		Input:     "001.srt",
-		Output:    "output",
-		Prefix:    "hell_",
-		VideoID:   "video_demo",
-		Timeout:   3 * time.Minute,
-		Rate:      1,
-		Volume:    100,
-		Pitch:     0,
+		BaseURL:    getenv("API2KEY_BASE_URL", api2key.DefaultBaseAPIURL),
+		Email:      getenv("API2KEY_EMAIL", ""),
+		Password:   getenv("API2KEY_PASSWORD", ""),
+		ProjectID:  getenv("API2KEY_PROJECT_ID", ""),
+		APIKey:     getenv("API2KEY_API_KEY", ""),
+		APIKeyName: getenv("API2KEY_KEY_NAME", "subtitle-tts"),
+		Provider:   getenv("API2KEY_PROVIDER", "auto"),
+		Search:     getenv("API2KEY_SEARCH", ""),
+		Voice:      getenv("API2KEY_VOICE", "zh-CN-XiaoxiaoNeural"),
+		Locale:     getenv("API2KEY_LOCALE", "zh-CN"),
+		Format:     getenv("API2KEY_FORMAT", "audio-24khz-96kbitrate-mono-mp3"),
+		Input:      getenv("API2KEY_INPUT", filepath.Join("subtitle_tts", "001.srt")),
+		Output:     getenv("API2KEY_OUTPUT", filepath.Join("subtitle_tts", "output")),
+		Prefix:     getenv("API2KEY_PREFIX", "segment_"),
+		VideoID:    getenv("API2KEY_VIDEO_ID", "subtitle-demo"),
+		Timeout:    3 * time.Minute,
+		Rate:       getenvFloat("API2KEY_RATE", 1),
+		Volume:     getenvFloat("API2KEY_VOLUME", 100),
+		Pitch:      getenvFloat("API2KEY_PITCH", 0),
 	}
 }
 
 func main() {
 	cfg := loadConfig()
 
-	if strings.TrimSpace(cfg.APIKey) == "" {
-		log.Fatal("API key is required")
-	}
-	if !strings.HasPrefix(strings.TrimSpace(cfg.APIKey), "sk-") {
-		log.Fatal("API key must start with sk-")
-	}
 	if strings.TrimSpace(cfg.Input) == "" {
 		log.Fatal("subtitle input file is required")
 	}
@@ -92,7 +92,12 @@ func main() {
 		api2key.WithBaseAPIURL(cfg.BaseURL),
 	)
 
-	provider, voice, err := resolveTTSProfile(ctx, client, cfg)
+	apiKey, accessToken, balanceBefore, err := resolveCredentials(ctx, client, cfg)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	provider, voice, err := resolveTTSProfile(ctx, client, cfg, apiKey)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -120,7 +125,7 @@ func main() {
 		storageKey := strings.Trim(strings.TrimSpace(videoID), "/") + "/" + storageFileName
 		result, err := client.SaveSpeechToFile(ctx, api2key.SynthesizeSpeechRequest{
 			ProjectID:        cfg.ProjectID,
-			APIKey:           cfg.APIKey,
+			APIKey:           apiKey,
 			Provider:         provider,
 			Text:             entry.Text,
 			Voice:            voice,
@@ -153,13 +158,25 @@ func main() {
 	if len(totalCharged) > 0 {
 		fmt.Println("charged:", strings.Join(totalCharged, ", "))
 	}
+	if strings.TrimSpace(accessToken) != "" && balanceBefore != nil {
+		balanceAfter, err := client.GetCreditsBalance(ctx, accessToken)
+		if err != nil {
+			log.Fatalf("query credits balance after synthesis: %v", err)
+		}
+		fmt.Printf("credits before: balance=%d reserved=%d\n", balanceBefore.Balance, balanceBefore.Reserved)
+		fmt.Printf("credits after:  balance=%d reserved=%d\n", balanceAfter.Balance, balanceAfter.Reserved)
+		fmt.Printf("credits delta:  %d\n", balanceBefore.Balance-balanceAfter.Balance)
+	}
 }
 
 func loadConfig() config {
 	cfg := defaultTestConfig()
 	flag.StringVar(&cfg.BaseURL, "base-url", cfg.BaseURL, "unified api base url")
-	flag.StringVar(&cfg.APIKey, "api-key", cfg.APIKey, "user api key starting with sk-")
+	flag.StringVar(&cfg.Email, "email", cfg.Email, "login email")
+	flag.StringVar(&cfg.Password, "password", cfg.Password, "login password")
 	flag.StringVar(&cfg.ProjectID, "project-id", cfg.ProjectID, "optional project id")
+	flag.StringVar(&cfg.APIKey, "api-key", cfg.APIKey, "optional existing user api key starting with sk-")
+	flag.StringVar(&cfg.APIKeyName, "key-name", cfg.APIKeyName, "api key name used by EnsureAPIKey after login")
 	flag.StringVar(&cfg.Provider, "provider", cfg.Provider, "tts provider: auto|azure|tencent")
 	flag.StringVar(&cfg.Search, "search", cfg.Search, "optional voice search keyword")
 	flag.StringVar(&cfg.Voice, "voice", cfg.Voice, "tts voice short name")
@@ -177,6 +194,58 @@ func loadConfig() config {
 	return cfg
 }
 
+func resolveCredentials(ctx context.Context, client *api2key.Client, cfg config) (string, string, *api2key.CreditsBalanceResponse, error) {
+	apiKey := strings.TrimSpace(cfg.APIKey)
+	if apiKey != "" {
+		if !strings.HasPrefix(apiKey, "sk-") {
+			return "", "", nil, fmt.Errorf("api key must start with sk-")
+		}
+		fmt.Println("using provided api key")
+		return apiKey, "", nil, nil
+	}
+
+	if strings.TrimSpace(cfg.Email) == "" || strings.TrimSpace(cfg.Password) == "" {
+		return "", "", nil, fmt.Errorf("email and password are required when api-key is not provided")
+	}
+	if strings.TrimSpace(cfg.ProjectID) == "" {
+		return "", "", nil, fmt.Errorf("project-id is required for login flow")
+	}
+
+	loginResult, err := client.Login(ctx, api2key.LoginRequest{
+		Email:     cfg.Email,
+		Password:  cfg.Password,
+		ProjectID: cfg.ProjectID,
+	})
+	if err != nil {
+		return "", "", nil, fmt.Errorf("login: %w", err)
+	}
+	fmt.Println("login ok")
+
+	balanceBefore, err := client.GetCreditsBalance(ctx, loginResult.AccessToken)
+	if err != nil {
+		return "", "", nil, fmt.Errorf("query credits balance before synthesis: %w", err)
+	}
+
+	keyName := strings.TrimSpace(cfg.APIKeyName)
+	if keyName == "" {
+		keyName = "subtitle-tts"
+	}
+	ensured, err := client.EnsureAPIKey(ctx, loginResult.AccessToken, api2key.CreateAPIKeyRequest{Name: keyName})
+	if err != nil {
+		return "", "", nil, fmt.Errorf("ensure api key: %w", err)
+	}
+	if !ensured.SecretAvailable || strings.TrimSpace(ensured.Secret) == "" {
+		return "", "", nil, fmt.Errorf("api key %q exists but secret is unavailable; pass API2KEY_API_KEY explicitly or delete the old key and rerun", keyName)
+	}
+	if ensured.Created {
+		fmt.Printf("api key created: name=%s prefix=%s\n", ensured.Key.Name, ensured.Key.KeyPrefix)
+	} else {
+		fmt.Printf("api key reused: name=%s prefix=%s\n", ensured.Key.Name, ensured.Key.KeyPrefix)
+	}
+
+	return ensured.Secret, loginResult.AccessToken, balanceBefore, nil
+}
+
 func buildStorageFileName(index string, extension string) string {
 	trimmed := strings.TrimSpace(index)
 	if trimmed == "" {
@@ -189,10 +258,10 @@ func buildStorageFileName(index string, extension string) string {
 	return "index_" + trimmed + extension
 }
 
-func resolveTTSProfile(ctx context.Context, client *api2key.Client, cfg config) (string, string, error) {
+func resolveTTSProfile(ctx context.Context, client *api2key.Client, cfg config, apiKey string) (string, string, error) {
 	requestedProvider := strings.ToLower(strings.TrimSpace(cfg.Provider))
 	if requestedProvider != "" && requestedProvider != "auto" {
-		voice, err := resolveVoiceForProvider(ctx, client, cfg, requestedProvider)
+		voice, err := resolveVoiceForProvider(ctx, client, cfg, apiKey, requestedProvider)
 		if err != nil {
 			return "", "", err
 		}
@@ -202,7 +271,7 @@ func resolveTTSProfile(ctx context.Context, client *api2key.Client, cfg config) 
 	providers := []string{"azure", "tencent"}
 	errorsByProvider := make([]string, 0, len(providers))
 	for _, provider := range providers {
-		voice, err := resolveVoiceForProvider(ctx, client, cfg, provider)
+		voice, err := resolveVoiceForProvider(ctx, client, cfg, apiKey, provider)
 		if err == nil {
 			return provider, voice, nil
 		}
@@ -212,7 +281,7 @@ func resolveTTSProfile(ctx context.Context, client *api2key.Client, cfg config) 
 	return "", "", fmt.Errorf("no available TTS provider on %s; tried azure/tencent: %s", cfg.BaseURL, strings.Join(errorsByProvider, " | "))
 }
 
-func resolveVoiceForProvider(ctx context.Context, client *api2key.Client, cfg config, provider string) (string, error) {
+func resolveVoiceForProvider(ctx context.Context, client *api2key.Client, cfg config, apiKey string, provider string) (string, error) {
 	search := strings.TrimSpace(cfg.Search)
 	if search == "" && strings.TrimSpace(cfg.Voice) != "" {
 		search = cfg.Voice
@@ -220,7 +289,7 @@ func resolveVoiceForProvider(ctx context.Context, client *api2key.Client, cfg co
 
 	voices, err := client.ListVoices(ctx, api2key.ListVoicesRequest{
 		ProjectID: cfg.ProjectID,
-		APIKey:    cfg.APIKey,
+		APIKey:    apiKey,
 		Provider:  provider,
 		Locale:    cfg.Locale,
 		Search:    search,
@@ -338,7 +407,21 @@ func normalizeParagraphs(lines []string) string {
 	return strings.Join(cleaned, "\n")
 }
 
-func getenvFloat(key string, fallback float64) float64 {
-	_ = key
+func getenv(key, fallback string) string {
+	if value := strings.TrimSpace(os.Getenv(key)); value != "" {
+		return value
+	}
 	return fallback
+}
+
+func getenvFloat(key string, fallback float64) float64 {
+	value := strings.TrimSpace(os.Getenv(key))
+	if value == "" {
+		return fallback
+	}
+	parsed, err := strconv.ParseFloat(value, 64)
+	if err != nil {
+		return fallback
+	}
+	return parsed
 }

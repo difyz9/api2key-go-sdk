@@ -17,7 +17,7 @@ import (
 )
 
 const (
-	DefaultBaseAPIURL = "https://open.api2key.com"
+	DefaultBaseAPIURL = "https://v2.api2key.com"
 	DefaultSpeechURL  = "https://tts.api2key.com"
 	DefaultTTSURL     = DefaultSpeechURL
 	DefaultAPIPrefix  = "/api/v1"

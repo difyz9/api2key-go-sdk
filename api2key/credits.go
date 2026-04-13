@@ -7,6 +7,41 @@ import (
 	"strings"
 )
 
+type CreditsBalanceScope struct {
+	Type        string `json:"type,omitempty"`
+	ProjectID   string `json:"projectId,omitempty"`
+	ProjectName string `json:"projectName,omitempty"`
+	ProjectSlug string `json:"projectSlug,omitempty"`
+}
+
+type CreditsAccountSummary struct {
+	Balance     int  `json:"balance"`
+	Reserved    int  `json:"reserved"`
+	TotalEarned *int `json:"totalEarned,omitempty"`
+	TotalSpent  *int `json:"totalSpent,omitempty"`
+}
+
+type CreditsBalanceResponse struct {
+	Balance     int                   `json:"balance"`
+	Reserved    int                   `json:"reserved"`
+	TotalEarned *int                  `json:"total_earned,omitempty"`
+	TotalSpent  *int                  `json:"total_spent,omitempty"`
+	Account     CreditsAccountSummary `json:"account"`
+	Scope       CreditsBalanceScope   `json:"scope"`
+}
+
+func (c *Client) GetCreditsBalance(ctx context.Context, accessToken string) (*CreditsBalanceResponse, error) {
+	if strings.TrimSpace(accessToken) == "" {
+		return nil, errors.New("access token is required")
+	}
+	var out CreditsBalanceResponse
+	endpoint := joinURL(c.baseAPIURL, c.apiPrefix, "credits", "balance")
+	if err := c.requestJSON(ctx, http.MethodGet, endpoint, bearerHeaders(accessToken), nil, &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
 type SpendCreditsRequest struct {
 	// ProjectID is required for service-to-service credits mutations.
 	ProjectID   string `json:"projectId"`

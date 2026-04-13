@@ -26,16 +26,18 @@ type ListVoicesResponse struct {
 }
 
 type ListVoicesRequest struct {
-	ProjectID string
-	APIKey    string
-	Provider  string
-	Locale    string
-	Search    string
+	ProjectID   string
+	APIKey      string
+	AccessToken string
+	Provider    string
+	Locale      string
+	Search      string
 }
 
 type SynthesizeSpeechRequest struct {
 	ProjectID        string  `json:"-"`
 	APIKey           string  `json:"-"`
+	AccessToken      string  `json:"-"`
 	Provider         string  `json:"provider,omitempty"`
 	Text             string  `json:"text"`
 	Voice            string  `json:"voice,omitempty"`
@@ -66,6 +68,7 @@ type SynthesizeSpeechResult struct {
 type ASRRequest struct {
 	ProjectID       string
 	APIKey          string
+	AccessToken     string
 	AudioFilePath   string
 	AudioURL        string
 	Provider        string
@@ -74,10 +77,11 @@ type ASRRequest struct {
 }
 
 type ASRTaskQueryRequest struct {
-	ProjectID string
-	APIKey    string
-	TaskID    string
-	Provider  string
+	ProjectID   string
+	APIKey      string
+	AccessToken string
+	TaskID      string
+	Provider    string
 }
 
 type DownloadSpeechAudioResult struct {
@@ -106,8 +110,8 @@ type ASRTaskResponse struct {
 }
 
 func (c *Client) ListVoices(ctx context.Context, input ListVoicesRequest) (*ListVoicesResponse, error) {
-	if strings.TrimSpace(input.APIKey) == "" {
-		return nil, errors.New("api key is required")
+	if strings.TrimSpace(input.APIKey) == "" && strings.TrimSpace(input.AccessToken) == "" {
+		return nil, errors.New("api key or access token is required")
 	}
 	query := url.Values{}
 	if strings.TrimSpace(input.Provider) != "" {
@@ -127,7 +131,7 @@ func (c *Client) ListVoices(ctx context.Context, input ListVoicesRequest) (*List
 		endpoint += "?" + encoded
 	}
 	var out ListVoicesResponse
-	headers := map[string]string{"x-api-key": input.APIKey}
+	headers := authHeaders(input.APIKey, input.AccessToken)
 	if err := c.requestJSON(ctx, http.MethodGet, endpoint, headers, nil, &out); err != nil {
 		return nil, err
 	}
@@ -135,8 +139,8 @@ func (c *Client) ListVoices(ctx context.Context, input ListVoicesRequest) (*List
 }
 
 func (c *Client) SynthesizeSpeech(ctx context.Context, input SynthesizeSpeechRequest) (*SynthesizeSpeechResult, error) {
-	if strings.TrimSpace(input.APIKey) == "" {
-		return nil, errors.New("api key is required")
+	if strings.TrimSpace(input.APIKey) == "" && strings.TrimSpace(input.AccessToken) == "" {
+		return nil, errors.New("api key or access token is required")
 	}
 	if strings.TrimSpace(input.Text) == "" {
 		return nil, errors.New("text is required")
@@ -164,7 +168,7 @@ func (c *Client) SynthesizeSpeech(ctx context.Context, input SynthesizeSpeechReq
 	if strings.TrimSpace(input.DownloadFilename) != "" {
 		body["downloadFilename"] = input.DownloadFilename
 	}
-	raw, headers, err := c.requestBinary(ctx, http.MethodPost, endpoint, map[string]string{"x-api-key": input.APIKey}, body)
+	raw, headers, err := c.requestBinary(ctx, http.MethodPost, endpoint, authHeaders(input.APIKey, input.AccessToken), body)
 	if err != nil {
 		return nil, err
 	}
@@ -210,8 +214,8 @@ func (c *Client) GetASRTask(ctx context.Context, apiKey, taskID string) (*ASRTas
 }
 
 func (c *Client) GetASRTaskWithOptions(ctx context.Context, input ASRTaskQueryRequest) (*ASRTaskResponse, error) {
-	if strings.TrimSpace(input.APIKey) == "" {
-		return nil, errors.New("api key is required")
+	if strings.TrimSpace(input.APIKey) == "" && strings.TrimSpace(input.AccessToken) == "" {
+		return nil, errors.New("api key or access token is required")
 	}
 	if strings.TrimSpace(input.TaskID) == "" {
 		return nil, errors.New("task id is required")
@@ -228,11 +232,23 @@ func (c *Client) GetASRTaskWithOptions(ctx context.Context, input ASRTaskQueryRe
 		endpoint += "?" + encoded
 	}
 	var raw map[string]any
-	headers := map[string]string{"x-api-key": input.APIKey}
+	headers := authHeaders(input.APIKey, input.AccessToken)
 	if err := c.requestJSON(ctx, http.MethodGet, endpoint, headers, nil, &raw); err != nil {
 		return nil, err
 	}
 	return decodeASRTask(raw), nil
+}
+
+func authHeaders(apiKey string, accessToken string) map[string]string {
+	trimmedAPIKey := strings.TrimSpace(apiKey)
+	if trimmedAPIKey != "" {
+		return map[string]string{"x-api-key": trimmedAPIKey}
+	}
+	trimmedAccessToken := strings.TrimSpace(accessToken)
+	if trimmedAccessToken != "" {
+		return bearerHeaders(trimmedAccessToken)
+	}
+	return map[string]string{}
 }
 
 func (c *Client) PollASRTask(ctx context.Context, apiKey, taskID string, interval time.Duration, maxAttempts int) (*ASRTaskResponse, error) {
