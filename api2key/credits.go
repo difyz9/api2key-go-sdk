@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"net/url"
+	"strconv"
 	"strings"
 )
 
@@ -30,6 +32,40 @@ type CreditsBalanceResponse struct {
 	Scope       CreditsBalanceScope   `json:"scope"`
 }
 
+type GetLedgerRequest struct {
+	AccessToken string `json:"-"`
+	Page        int    `json:"-"`
+	Size        int    `json:"-"`
+	Type        string `json:"-"`
+	Service     string `json:"-"`
+}
+
+type LedgerItem struct {
+	ID           string `json:"id"`
+	UserID       string `json:"userId"`
+	ProjectID    string `json:"projectId"`
+	Type         string `json:"type"`
+	Delta        int    `json:"delta"`
+	BalanceAfter int    `json:"balanceAfter"`
+	Service      string `json:"service"`
+	Model        string `json:"model"`
+	TaskID       string `json:"taskId"`
+	Description  string `json:"description"`
+	CreatedAt    int64  `json:"createdAt"`
+}
+
+type LedgerPagination struct {
+	Page       int `json:"page"`
+	Size       int `json:"size"`
+	Total      int `json:"total"`
+	TotalPages int `json:"totalPages"`
+}
+
+type GetLedgerResponse struct {
+	List       []LedgerItem     `json:"list"`
+	Pagination LedgerPagination `json:"pagination"`
+}
+
 func (c *Client) GetCreditsBalance(ctx context.Context, accessToken string) (*CreditsBalanceResponse, error) {
 	if strings.TrimSpace(accessToken) == "" {
 		return nil, errors.New("access token is required")
@@ -37,6 +73,34 @@ func (c *Client) GetCreditsBalance(ctx context.Context, accessToken string) (*Cr
 	var out CreditsBalanceResponse
 	endpoint := joinURL(c.baseAPIURL, c.apiPrefix, "credits", "balance")
 	if err := c.requestJSON(ctx, http.MethodGet, endpoint, bearerHeaders(accessToken), nil, &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
+func (c *Client) GetLedger(ctx context.Context, input GetLedgerRequest) (*GetLedgerResponse, error) {
+	if strings.TrimSpace(input.AccessToken) == "" {
+		return nil, errors.New("access token is required")
+	}
+	query := url.Values{}
+	if input.Page > 0 {
+		query.Set("page", strconv.Itoa(input.Page))
+	}
+	if input.Size > 0 {
+		query.Set("size", strconv.Itoa(input.Size))
+	}
+	if strings.TrimSpace(input.Type) != "" {
+		query.Set("type", input.Type)
+	}
+	if strings.TrimSpace(input.Service) != "" {
+		query.Set("service", input.Service)
+	}
+	endpoint := joinURL(c.baseAPIURL, c.apiPrefix, "credits", "ledger")
+	if encoded := query.Encode(); encoded != "" {
+		endpoint += "?" + encoded
+	}
+	var out GetLedgerResponse
+	if err := c.requestJSON(ctx, http.MethodGet, endpoint, bearerHeaders(input.AccessToken), nil, &out); err != nil {
 		return nil, err
 	}
 	return &out, nil
@@ -53,6 +117,32 @@ type SpendCreditsRequest struct {
 }
 
 type SpendCreditsResponse struct {
+	BalanceAfter int    `json:"balanceAfter"`
+	Idempotent   bool   `json:"idempotent,omitempty"`
+	ScopeType    string `json:"scopeType,omitempty"`
+	ProjectID    string `json:"projectId,omitempty"`
+}
+
+type GrantCreditsRequest struct {
+	ProjectID   string `json:"projectId"`
+	UserID      string `json:"userId"`
+	Amount      int    `json:"amount"`
+	TaskID      string `json:"taskId,omitempty"`
+	Description string `json:"description,omitempty"`
+}
+
+type GrantCreditsResponse map[string]any
+
+type RefundCreditsRequest struct {
+	ProjectID   string `json:"projectId"`
+	UserID      string `json:"userId"`
+	Amount      int    `json:"amount"`
+	Service     string `json:"service,omitempty"`
+	TaskID      string `json:"taskId,omitempty"`
+	Description string `json:"description,omitempty"`
+}
+
+type RefundCreditsResponse struct {
 	BalanceAfter int    `json:"balanceAfter"`
 	Idempotent   bool   `json:"idempotent,omitempty"`
 	ScopeType    string `json:"scopeType,omitempty"`
@@ -102,6 +192,50 @@ func (c *Client) SpendCredits(ctx context.Context, input SpendCreditsRequest) (*
 	}
 	var out SpendCreditsResponse
 	endpoint := joinURL(c.baseAPIURL, c.apiPrefix, "credits", "spend")
+	headers := map[string]string{"X-Service-Secret": c.serviceSecret}
+	if err := c.requestJSON(ctx, http.MethodPost, endpoint, headers, input, &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
+func (c *Client) GrantCredits(ctx context.Context, input GrantCreditsRequest) (*GrantCreditsResponse, error) {
+	if err := c.requireServiceSecret(); err != nil {
+		return nil, err
+	}
+	if strings.TrimSpace(input.ProjectID) == "" {
+		return nil, errors.New("project id is required")
+	}
+	if strings.TrimSpace(input.UserID) == "" {
+		return nil, errors.New("user id is required")
+	}
+	if input.Amount <= 0 {
+		return nil, errors.New("amount must be greater than 0")
+	}
+	var out GrantCreditsResponse
+	endpoint := joinURL(c.baseAPIURL, c.apiPrefix, "credits", "grant")
+	headers := map[string]string{"X-Service-Secret": c.serviceSecret}
+	if err := c.requestJSON(ctx, http.MethodPost, endpoint, headers, input, &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
+func (c *Client) RefundCredits(ctx context.Context, input RefundCreditsRequest) (*RefundCreditsResponse, error) {
+	if err := c.requireServiceSecret(); err != nil {
+		return nil, err
+	}
+	if strings.TrimSpace(input.ProjectID) == "" {
+		return nil, errors.New("project id is required")
+	}
+	if strings.TrimSpace(input.UserID) == "" {
+		return nil, errors.New("user id is required")
+	}
+	if input.Amount <= 0 {
+		return nil, errors.New("amount must be greater than 0")
+	}
+	var out RefundCreditsResponse
+	endpoint := joinURL(c.baseAPIURL, c.apiPrefix, "credits", "refund")
 	headers := map[string]string{"X-Service-Secret": c.serviceSecret}
 	if err := c.requestJSON(ctx, http.MethodPost, endpoint, headers, input, &out); err != nil {
 		return nil, err

@@ -26,6 +26,13 @@ type DirectPaymentCreateRequest struct {
 	PaymentType string  `json:"paymentType,omitempty"`
 }
 
+type UnifiedPaymentCreateRequest struct {
+	OrderID     string `json:"orderId"`
+	PaymentType string `json:"paymentType,omitempty"`
+}
+
+type UnifiedPaymentCreateResponse map[string]any
+
 type DirectPaymentCreateResponse struct {
 	ID             string                `json:"id"`
 	Subject        string                `json:"subject"`
@@ -41,6 +48,13 @@ type DirectPaymentQueryRequest struct {
 	DirectPaymentID string
 	OrderNo         string
 }
+
+type UnifiedPaymentQueryRequest struct {
+	OrderID string
+	OrderNo string
+}
+
+type UnifiedPaymentQueryResponse map[string]any
 
 type DirectPaymentRecord struct {
 	ID       string  `json:"id"`
@@ -100,6 +114,46 @@ func (c *Client) GetDirectPaymentStatus(ctx context.Context, accessToken string,
 
 	var out DirectPaymentQueryResponse
 	endpoint := joinURL(c.baseAPIURL, c.apiPrefix, "payment", "unified", "direct", "query") + "?" + query.Encode()
+	if err := c.requestJSON(ctx, http.MethodGet, endpoint, bearerHeaders(accessToken), nil, &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
+func (c *Client) CreateUnifiedPayment(ctx context.Context, accessToken string, input UnifiedPaymentCreateRequest) (*UnifiedPaymentCreateResponse, error) {
+	if strings.TrimSpace(accessToken) == "" {
+		return nil, errors.New("access token is required")
+	}
+	if strings.TrimSpace(input.OrderID) == "" {
+		return nil, errors.New("order id is required")
+	}
+	input.PaymentType = normalizeDirectPaymentType(input.PaymentType)
+
+	var out UnifiedPaymentCreateResponse
+	endpoint := joinURL(c.baseAPIURL, c.apiPrefix, "payment", "unified", "create")
+	if err := c.requestJSON(ctx, http.MethodPost, endpoint, bearerHeaders(accessToken), input, &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
+func (c *Client) GetUnifiedPaymentStatus(ctx context.Context, accessToken string, input UnifiedPaymentQueryRequest) (*UnifiedPaymentQueryResponse, error) {
+	if strings.TrimSpace(accessToken) == "" {
+		return nil, errors.New("access token is required")
+	}
+	query := url.Values{}
+	if strings.TrimSpace(input.OrderID) != "" {
+		query.Set("orderId", input.OrderID)
+	}
+	if strings.TrimSpace(input.OrderNo) != "" {
+		query.Set("orderNo", input.OrderNo)
+	}
+	if len(query) == 0 {
+		return nil, errors.New("order id or order no is required")
+	}
+
+	var out UnifiedPaymentQueryResponse
+	endpoint := joinURL(c.baseAPIURL, c.apiPrefix, "payment", "unified", "query") + "?" + query.Encode()
 	if err := c.requestJSON(ctx, http.MethodGet, endpoint, bearerHeaders(accessToken), nil, &out); err != nil {
 		return nil, err
 	}
