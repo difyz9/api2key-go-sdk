@@ -1,12 +1,4 @@
-		api2key.WithBaseAPIURL("https://v2.api2key.com"),
-		生产环境只需要传 `https://v2.api2key.com`，不需要再配置独立语音服务。
-	api2key.WithBaseAPIURL("https://v2.api2key.com"),
-API2KEY_SPEECH_URL=https://v2.api2key.com \
-	api2key.WithBaseAPIURL("https://v2.api2key.com"),
-		api2key.WithBaseAPIURL("https://v2.api2key.com"),
-$env:API2KEY_BASE_URL = "https://v2.api2key.com"
-$env:API2KEY_BASE_URL = "https://v2.api2key.com"
-$env:API2KEY_BASE_URL = "https://v2.api2key.com"
+
 # api2key Go SDK
 
 这个仓库提供一个可复用的 Go SDK，覆盖当前项目最常用的客户端能力：
