@@ -138,7 +138,9 @@ func main() {
 		fmt.Println(taskResult.SRT)
 	}
 
-	balanceBefore, err := client.GetCreditsBalance(ctx, loginResult.AccessToken)
+	balanceBefore, err := client.GetCreditsBalanceWithOptions(ctx, api2key.GetCreditsBalanceRequest{
+		AccessToken: loginResult.AccessToken,
+	})
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -181,6 +183,7 @@ func main() {
 - `WithTTSURL(...)` 仍然保留，作为兼容别名，不影响旧调用代码。
 - `WithServiceSecret(...)` 只在调用积分接口时需要，单独调用 TTS / ASR 不需要。
 - 用户侧登录后，`CreateAPIKey` / `EnsureAPIKey` 默认跟随当前 JWT 中的项目上下文，不需要再额外显式传 `ProjectID`。
+- 用户态积分查询现在同时支持 `AccessToken` 和 `APIKey`；推荐用 `GetCreditsBalanceWithOptions(...)` 与 `GetLedger(...)` 传入二者之一。
 - 积分相关接口仍然要求显式传 `ProjectID`，因为它们是服务端调用接口，走 `X-Service-Secret`。
 - 直付支付接口使用登录返回的 `accessToken`，不使用 `service secret` 或 `api key`。
 
@@ -279,7 +282,7 @@ downloaded, err := client.DownloadSpeechAudio(ctx, result.StorageKey)
 
 ## 可运行示例
 
-如果你的目标只是“先获取用户的 apikey 列表，列表为空才创建一个；列表不为空就直接取一个返回，而且不要重复创建”，推荐直接使用 [ensure_apikey/main.go](/Users/apple/opt/difyz_0329/05/api2key-go-sdk/ensure_apikey/main.go) 这个独立案例：
+如果你的目标只是“先获取用户的 apikey 列表，列表为空才创建一个；列表不为空就直接取一个返回，而且不要重复创建”，推荐直接使用 [ensure_apikey/main.go](/Users/apple/opt/difyz_0329/0413/api2key-go-sdk/ensure_apikey/main.go) 这个独立案例：
 
 1. 先登录拿 `accessToken`
 2. 调用 `ListAPIKeys` 获取当前用户的 apikey 列表
@@ -288,9 +291,10 @@ downloaded, err := client.DownloadSpeechAudio(ctx, result.StorageKey)
 
 注意：现在服务端列表接口会返回 `secret`。这个案例会优先复用“列表里已有明文 secret 的 key”；如果现有 key 都没有明文 `secret`，就会新创建一个 key，并返回新 key 的完整 apikey。
 
-仓库里有四个示例：
+仓库里有五个示例：
 
 - `ensure_apikey/main.go`：独立 apikey 案例，先查用户 apikey 列表，有就直接取一个，没有才创建，避免重复创建。
+- `apikey_credits/main.go`：纯 API key 查询积分案例，不走登录，直接查询余额和最近流水。
 - `example/main.go`：通用 CLI 风格示例，适合串联登录、建 key、查 voices、做 speech / SRT / credits。
 - `demo01/main.go`：更短的烟雾测试示例，默认会跑登录、建 key、语音合成和一次 ASR 轮询。
 - `subtitle_tts/main.go`：登录后自动加载或创建用户 API Key，再把 `.srt` 或 `.txt` 文本逐段合成音频，并打印积分余额前后变化。
@@ -319,6 +323,23 @@ API2KEY_PASSWORD='Test123456!' \
 API2KEY_KEY_NAME='sdk-example-key' \
 API2KEY_PROJECT_ID='your-project-id' \
 go run ./ensure_apikey
+```
+
+如果你的目标只是“我已经有 sk- 开头的用户 API key，现在只想查积分余额和最近流水”，直接运行这个最小案例：
+
+```bash
+API2KEY_BASE_URL=https://open.api2key.com \
+API2KEY_API_KEY='sk-your-api-key' \
+go run ./apikey_credits
+```
+
+如果该 API key 绑定了项目，通常不需要再显式传 `API2KEY_PROJECT_ID`。如果你想在 JWT 场景或未锁项目场景下指定流水过滤项目，也可以追加：
+
+```bash
+API2KEY_BASE_URL=https://open.api2key.com \
+API2KEY_API_KEY='sk-your-api-key' \
+API2KEY_PROJECT_ID='ytb2bili' \
+go run ./apikey_credits
 ```
 
 通用 CLI 示例仍然保留在 `example/main.go`，只跑登录、创建 key、查询语音列表：
@@ -496,7 +517,9 @@ func main() {
 		log.Fatal(err)
 	}
 
-	balanceBefore, err := client.GetCreditsBalance(ctx, loginResult.AccessToken)
+	balanceBefore, err := client.GetCreditsBalanceWithOptions(ctx, api2key.GetCreditsBalanceRequest{
+		AccessToken: loginResult.AccessToken,
+	})
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -514,10 +537,34 @@ func main() {
 		log.Fatal(err)
 	}
 
-	balanceAfter, err := client.GetCreditsBalance(ctx, loginResult.AccessToken)
+	balanceAfter, err := client.GetCreditsBalanceWithOptions(ctx, api2key.GetCreditsBalanceRequest{
+		AccessToken: loginResult.AccessToken,
+	})
 	if err != nil {
 		log.Fatal(err)
 	}
+
+如果你已经有用户 API Key，也可以直接查询积分，无需先登录：
+
+```go
+balance, err := client.GetCreditsBalanceWithOptions(ctx, api2key.GetCreditsBalanceRequest{
+	APIKey: "sk-xxx",
+})
+if err != nil {
+	log.Fatal(err)
+}
+
+ledger, err := client.GetLedger(ctx, api2key.GetLedgerRequest{
+	APIKey:    "sk-xxx",
+	Page:      1,
+	Size:      20,
+	ProjectID: "ytb2bili",
+})
+if err != nil {
+	log.Fatal(err)
+}
+fmt.Println(balance.Balance, ledger.Pagination.Total)
+```
 	log.Println("credits delta:", balanceBefore.Balance-balanceAfter.Balance)
 }
 ```
@@ -575,6 +622,7 @@ go run ./subtitle_tts
 
 - `Login`
 - `GetCreditsBalance`
+- `GetCreditsBalanceWithOptions`
 - `CreateAPIKey`
 - `ListAPIKeys`
 - `UpdateAPIKey`
@@ -596,6 +644,7 @@ go run ./subtitle_tts
 
 ### 积分
 
+- `GetLedger`
 - `SpendCredits`
 - `ReserveCredits`
 - `ConfirmCredits`

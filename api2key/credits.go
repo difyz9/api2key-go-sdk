@@ -32,12 +32,19 @@ type CreditsBalanceResponse struct {
 	Scope       CreditsBalanceScope   `json:"scope"`
 }
 
+type GetCreditsBalanceRequest struct {
+	AccessToken string `json:"-"`
+	APIKey      string `json:"-"`
+}
+
 type GetLedgerRequest struct {
 	AccessToken string `json:"-"`
+	APIKey      string `json:"-"`
 	Page        int    `json:"-"`
 	Size        int    `json:"-"`
 	Type        string `json:"-"`
 	Service     string `json:"-"`
+	ProjectID   string `json:"-"`
 }
 
 type LedgerItem struct {
@@ -67,20 +74,24 @@ type GetLedgerResponse struct {
 }
 
 func (c *Client) GetCreditsBalance(ctx context.Context, accessToken string) (*CreditsBalanceResponse, error) {
-	if strings.TrimSpace(accessToken) == "" {
-		return nil, errors.New("access token is required")
+	return c.GetCreditsBalanceWithOptions(ctx, GetCreditsBalanceRequest{AccessToken: accessToken})
+}
+
+func (c *Client) GetCreditsBalanceWithOptions(ctx context.Context, input GetCreditsBalanceRequest) (*CreditsBalanceResponse, error) {
+	if strings.TrimSpace(input.AccessToken) == "" && strings.TrimSpace(input.APIKey) == "" {
+		return nil, errors.New("access token or api key is required")
 	}
 	var out CreditsBalanceResponse
 	endpoint := joinURL(c.baseAPIURL, c.apiPrefix, "credits", "balance")
-	if err := c.requestJSON(ctx, http.MethodGet, endpoint, bearerHeaders(accessToken), nil, &out); err != nil {
+	if err := c.requestJSON(ctx, http.MethodGet, endpoint, authHeaders(input.APIKey, input.AccessToken), nil, &out); err != nil {
 		return nil, err
 	}
 	return &out, nil
 }
 
 func (c *Client) GetLedger(ctx context.Context, input GetLedgerRequest) (*GetLedgerResponse, error) {
-	if strings.TrimSpace(input.AccessToken) == "" {
-		return nil, errors.New("access token is required")
+	if strings.TrimSpace(input.AccessToken) == "" && strings.TrimSpace(input.APIKey) == "" {
+		return nil, errors.New("access token or api key is required")
 	}
 	query := url.Values{}
 	if input.Page > 0 {
@@ -95,12 +106,15 @@ func (c *Client) GetLedger(ctx context.Context, input GetLedgerRequest) (*GetLed
 	if strings.TrimSpace(input.Service) != "" {
 		query.Set("service", input.Service)
 	}
+	if strings.TrimSpace(input.ProjectID) != "" {
+		query.Set("projectId", input.ProjectID)
+	}
 	endpoint := joinURL(c.baseAPIURL, c.apiPrefix, "credits", "ledger")
 	if encoded := query.Encode(); encoded != "" {
 		endpoint += "?" + encoded
 	}
 	var out GetLedgerResponse
-	if err := c.requestJSON(ctx, http.MethodGet, endpoint, bearerHeaders(input.AccessToken), nil, &out); err != nil {
+	if err := c.requestJSON(ctx, http.MethodGet, endpoint, authHeaders(input.APIKey, input.AccessToken), nil, &out); err != nil {
 		return nil, err
 	}
 	return &out, nil

@@ -14,40 +14,48 @@ func main() {
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
 
-
-
 	baseURL := getenv("API2KEY_BASE_URL", api2key.DefaultBaseAPIURL)
 	projectID := getenv("API2KEY_PROJECT_ID", "")
+	apiKey := getenv("API2KEY_API_KEY", "")
 	email := getenv("API2KEY_EMAIL", "")
 	password := getenv("API2KEY_PASSWORD", "")
 
-	if email == "" || password == "" {
-		log.Fatal("API2KEY_EMAIL and API2KEY_PASSWORD are required")
-	}
-	if projectID == "" {
-		log.Fatal("API2KEY_PROJECT_ID is required")
+	if apiKey == "" {
+		if email == "" || password == "" {
+			log.Fatal("API2KEY_API_KEY or API2KEY_EMAIL/API2KEY_PASSWORD is required")
+		}
+		if projectID == "" {
+			log.Fatal("API2KEY_PROJECT_ID is required for login flow")
+		}
 	}
 
 	client := api2key.NewClient(
 		api2key.WithBaseAPIURL(baseURL),
 	)
 
-	// 1. 登录获取 access token
-	loginResult, err := client.Login(ctx, api2key.LoginRequest{
-		Email:     email,
-		Password:  password,
-		ProjectID: projectID,
-	})
-	if err != nil {
-		log.Fatal("login failed:", err)
+	accessToken := ""
+	if apiKey == "" {
+		loginResult, err := client.Login(ctx, api2key.LoginRequest{
+			Email:     email,
+			Password:  password,
+			ProjectID: projectID,
+		})
+		if err != nil {
+			log.Fatal("login failed:", err)
+		}
+		fmt.Println("✓ 登录成功")
+		fmt.Println()
+		accessToken = loginResult.AccessToken
+	} else {
+		fmt.Println("✓ 使用现有 API key 查询积分")
+		fmt.Println()
 	}
-	fmt.Println("✓ 登录成功")
-	fmt.Println()
-
-	accessToken := loginResult.AccessToken
 
 	// 2. 查询积分余额
-	balance, err := client.GetCreditsBalance(ctx, accessToken)
+	balance, err := client.GetCreditsBalanceWithOptions(ctx, api2key.GetCreditsBalanceRequest{
+		AccessToken: accessToken,
+		APIKey:      apiKey,
+	})
 	if err != nil {
 		log.Fatal("get credits balance failed:", err)
 	}
@@ -67,8 +75,10 @@ func main() {
 	size := 10
 	ledger, err := client.GetLedger(ctx, api2key.GetLedgerRequest{
 		AccessToken: accessToken,
+		APIKey:      apiKey,
 		Page:        page,
 		Size:        size,
+		ProjectID:   projectID,
 	})
 	if err != nil {
 		log.Fatal("get ledger failed:", err)
@@ -108,9 +118,11 @@ func main() {
 		fmt.Println("=== 筛选消费记录 ===")
 		spendLedger, err := client.GetLedger(ctx, api2key.GetLedgerRequest{
 			AccessToken: accessToken,
+			APIKey:      apiKey,
 			Page:        1,
 			Size:        10,
 			Type:        "spend", // 可选值: spend, grant, refund 等
+			ProjectID:   projectID,
 		})
 		if err != nil {
 			log.Fatal("get spend ledger failed:", err)
