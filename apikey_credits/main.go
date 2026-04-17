@@ -18,7 +18,6 @@ func main() {
 	// 补一个“纯 API key 查询积分”的最小示例
 
 
-	// sk-EA8ADC-B77E92D0A6637689CF-6F0635C77271
 	baseURL := getenv("API2KEY_BASE_URL", api2key.DefaultBaseAPIURL)
 	apiKey := getenv("API2KEY_API_KEY", "")
 	projectID := getenv("API2KEY_PROJECT_ID", "")
