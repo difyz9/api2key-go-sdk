@@ -18,8 +18,7 @@ import (
 
 const (
 	DefaultBaseAPIURL = "https://stage.api2key.com"
-	DefaultSpeechURL  = "https://tts.api2key.com"
-	DefaultTTSURL     = DefaultSpeechURL
+	DefaultTTSURL     = DefaultBaseAPIURL
 	DefaultAPIPrefix  = "/api/v1"
 )
 
@@ -309,6 +308,85 @@ func (c *Client) requestBinary(ctx context.Context, method, endpoint string, hea
 		return nil, nil, &APIError{StatusCode: resp.StatusCode, Message: "expected binary response but got json", RawBody: string(raw)}
 	}
 	return raw, resp.Header.Clone(), nil
+}
+
+func (c *Client) requestRaw(ctx context.Context, method, endpoint string, headers map[string]string, input any) ([]byte, http.Header, error) {
+	var body io.Reader
+	if input != nil {
+		raw, err := json.Marshal(input)
+		if err != nil {
+			return nil, nil, fmt.Errorf("marshal request body: %w", err)
+		}
+		body = bytes.NewReader(raw)
+	}
+	req, err := http.NewRequestWithContext(ctx, method, endpoint, body)
+	if err != nil {
+		return nil, nil, fmt.Errorf("build request: %w", err)
+	}
+	if input != nil {
+		req.Header.Set("Content-Type", "application/json")
+	}
+	for key, value := range headers {
+		req.Header.Set(key, value)
+	}
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return nil, nil, fmt.Errorf("send request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	raw, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, nil, fmt.Errorf("read response body: %w", err)
+	}
+	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
+		var result envelope[json.RawMessage]
+		if err := json.Unmarshal(raw, &result); err == nil {
+			return nil, nil, buildAPIError(resp.StatusCode, result, raw)
+		}
+		return nil, nil, &APIError{StatusCode: resp.StatusCode, Message: strings.TrimSpace(string(raw)), RawBody: string(raw)}
+	}
+	return raw, resp.Header.Clone(), nil
+}
+
+func (c *Client) requestStream(ctx context.Context, method, endpoint string, headers map[string]string, input any) (*http.Response, error) {
+	var body io.Reader
+	if input != nil {
+		raw, err := json.Marshal(input)
+		if err != nil {
+			return nil, fmt.Errorf("marshal request body: %w", err)
+		}
+		body = bytes.NewReader(raw)
+	}
+	req, err := http.NewRequestWithContext(ctx, method, endpoint, body)
+	if err != nil {
+		return nil, fmt.Errorf("build request: %w", err)
+	}
+	if input != nil {
+		req.Header.Set("Content-Type", "application/json")
+	}
+	for key, value := range headers {
+		req.Header.Set(key, value)
+	}
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("send request: %w", err)
+	}
+	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
+		defer resp.Body.Close()
+		raw, readErr := io.ReadAll(resp.Body)
+		if readErr != nil {
+			return nil, fmt.Errorf("read error response body: %w", readErr)
+		}
+		var result envelope[json.RawMessage]
+		if err := json.Unmarshal(raw, &result); err == nil {
+			return nil, buildAPIError(resp.StatusCode, result, raw)
+		}
+		return nil, &APIError{StatusCode: resp.StatusCode, Message: strings.TrimSpace(string(raw)), RawBody: string(raw)}
+	}
+	return resp, nil
 }
 
 func (c *Client) requestMultipart(ctx context.Context, endpoint string, headers map[string]string, fields map[string]string, fileField, filePath string, output any) error {

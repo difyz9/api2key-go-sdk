@@ -5,13 +5,18 @@
 
 1. 用户登录
 2. 创建和管理 API Key
-3. 获取语音列表
-4. 文本转语音
-5. 音频转写 / 生成 SRT
-6. 异步 ASR 任务查询与轮询
-7. 下载已存储的合成音频
-8. 用户积分扣减 / 预扣 / 确认 / 取消
-9. 直付支付创建 / 查询 / 轮询
+3. AI 模型列表 / AI 余额查询
+4. OpenAI-compatible 在线会话
+5. Anthropic Messages 在线会话
+6. Gemini GenerateContent 在线会话
+7. AI 会话历史读写
+8. 获取语音列表
+9. 文本转语音
+10. 音频转写 / 生成 SRT
+11. 异步 ASR 任务查询与轮询
+12. 下载已存储的合成音频
+13. 用户积分扣减 / 预扣 / 确认 / 取消
+14. 直付支付创建 / 查询 / 轮询
 
 ## 安装与验证
 
@@ -174,10 +179,167 @@ func main() {
 }
 ```
 
+## AI 在线会话
+
+AI 相关能力已经对齐到 Go SDK，直接对应服务端这些路由：
+
+- `/api/v1/ai/models`
+- `/api/v1/ai/balance`
+- `/api/v1/ai/chat/completions`
+- `/api/v1/ai/completions`
+- `/api/v1/ai/anthropic/v1/messages`
+- `/api/v1/ai/google/v1beta/models/{model}:generateContent`
+- `/api/v1/ai/histories`
+- `/api/v1/ai/history`
+
+如果你想把 SDK 作为自己的业务基类来“继承”，Go 里的推荐方式是嵌入 `*api2key.AISession`：
+
+```go
+package main
+
+import (
+	"context"
+	"fmt"
+	"log"
+
+	"github.com/difyz9/api2key-go-sdk/api2key"
+)
+
+type ChatService struct {
+	*api2key.AISession
+}
+
+func NewChatService(projectID, apiKey string) *ChatService {
+	client := api2key.NewClient(
+		api2key.WithBaseAPIURL("https://open.api2key.com"),
+	)
+	return &ChatService{
+		AISession: api2key.NewAISession(
+			client,
+			api2key.WithAISessionProjectID(projectID),
+			api2key.WithAISessionAPIKey(apiKey),
+		),
+	}
+}
+
+func (s *ChatService) Reply(ctx context.Context, prompt string) (string, error) {
+	resp, err := s.ChatCompletions(ctx, map[string]any{
+		"model": "openai/gpt-4o-mini",
+		"messages": []map[string]string{
+			{"role": "system", "content": "You are a helpful assistant."},
+			{"role": "user", "content": prompt},
+		},
+	})
+	if err != nil {
+		return "", err
+	}
+
+	var data struct {
+		Choices []struct {
+			Message struct {
+				Content string `json:"content"`
+			} `json:"message"`
+		} `json:"choices"`
+	}
+	if err := resp.Decode(&data); err != nil {
+		return "", err
+	}
+	if len(data.Choices) == 0 {
+		return "", nil
+	}
+	return data.Choices[0].Message.Content, nil
+}
+
+func main() {
+	service := NewChatService("ytb2bili", "your-api-key")
+	content, err := service.Reply(context.Background(), "给我一句简短的 Go 建议")
+	if err != nil {
+		log.Fatal(err)
+	}
+	fmt.Println(content)
+}
+```
+
+流式会话同样可直接使用：
+
+```go
+stream, err := session.ChatCompletionsStream(ctx, map[string]any{
+	"model": "openai/gpt-4o-mini",
+	"stream": true,
+	"messages": []map[string]string{{
+		"role": "user",
+		"content": "请流式输出一段自我介绍",
+	}},
+})
+if err != nil {
+	log.Fatal(err)
+}
+defer stream.Body.Close()
+
+raw, err := io.ReadAll(stream.Body)
+if err != nil {
+	log.Fatal(err)
+}
+fmt.Println(string(raw))
+```
+
+会话历史接口也可以跟 `AISession` 一起使用：
+
+```go
+_, err = session.PutHistory(ctx, []api2key.AIHistoryMessage{
+	{
+		ID:        "msg-1",
+		Role:      "user",
+		Content:   "你好",
+		Timestamp: time.Now().UTC().Format(time.RFC3339),
+	},
+}, "conversation-1")
+if err != nil {
+	log.Fatal(err)
+}
+
+history, err := session.GetHistory(ctx, "conversation-1")
+if err != nil {
+	log.Fatal(err)
+}
+fmt.Println(len(history.Messages))
+```
+
 说明：
 
-- TTS / ASR 相关接口现在直接调用 `api2key-base-api` 的内置语音路由。
-- 生产环境只需要传 `https://open.api2key.com`，不需要再配置独立语音服务。
+- `AIResponse` 会保留原始 JSON，不强绑定某个模型厂商的响应结构。
+- `AIStreamResponse` 会直接返回可读取的 `io.ReadCloser`，适合 SSE / 流式文本透传。
+- `AISession` 会自动复用默认的 `projectId`、`apiKey` 或 `accessToken`，适合你在业务侧嵌入后继续扩展自己的方法。
+- 如果需要 Anthropic 或 Gemini，只需调用 `AnthropicMessages`、`AnthropicMessagesStream`、`GoogleGenerateContent`，请求体保持各自官方格式即可。
+
+只用 `baseUrl + apiKey` 直接发起 AI 对话的最小案例已经放在 `ai_chat/main.go`：
+
+```bash
+API2KEY_BASE_URL=https://stage.api2key.com \
+API2KEY_API_KEY=your-api-key \
+API2KEY_AI_MODEL=openai/gpt-4o-mini \
+API2KEY_AI_PROMPT='请介绍一下 api2key 的能力' \
+go run ./ai_chat
+```
+
+这个案例不需要登录，不需要 email/password，也不需要额外创建 session；前提是你传入的 API Key 已经可用于 AI 对话。
+
+如果你想直接看流式输出：
+
+```bash
+API2KEY_BASE_URL=https://stage.api2key.com \
+API2KEY_API_KEY=your-api-key \
+API2KEY_AI_MODEL=openai/gpt-4o-mini \
+API2KEY_AI_PROMPT='请流式输出一段简短介绍' \
+API2KEY_AI_STREAM=true \
+go run ./ai_chat
+```
+
+说明：
+
+- TTS / ASR 相关接口现在直接调用 `api2key-api-stage` 的内置语音路由，默认与主 API 共用同一个根域名。
+- stage 环境默认统一使用 `https://stage.api2key.com`，不需要再配置独立的 `tts.api2key.com`。
+- 生产环境只需要传 `https://open.api2key.com`，也不需要再配置独立语音服务。
 - `SynthesizeSpeechRequest` 支持 `StorageKey` 和 `DownloadFilename`，可把远端音频固定存成 `video_id/index_0001.mp3` 这种结构。
 - `WithSpeechURL(...)` 是当前推荐的语音根路径覆盖项，适合本地调试、灰度环境或特殊部署。
 - `WithTTSURL(...)` 仍然保留，作为兼容别名，不影响旧调用代码。
@@ -295,6 +457,7 @@ downloaded, err := client.DownloadSpeechAudio(ctx, result.StorageKey)
 
 - `ensure_apikey/main.go`：独立 apikey 案例，先查用户 apikey 列表，有就直接取一个，没有才创建，避免重复创建。
 - `apikey_credits/main.go`：纯 API key 查询积分案例，不走登录，直接查询余额和最近流水。
+- `ai_chat/main.go`：最小 AI 对话示例，只需要 `baseUrl + apiKey`。
 - `example/main.go`：通用 CLI 风格示例，适合串联登录、建 key、查 voices、做 speech / SRT / credits。
 - `demo01/main.go`：更短的烟雾测试示例，默认会跑登录、建 key、语音合成和一次 ASR 轮询。
 - `subtitle_tts/main.go`：登录后自动加载或创建用户 API Key，再把 `.srt` 或 `.txt` 文本逐段合成音频，并打印积分余额前后变化。
