@@ -26,6 +26,9 @@ type config struct {
 }
 
 func main() {
+
+
+
 	cfg := loadConfig()
 
 	ctx, cancel := context.WithTimeout(context.Background(), cfg.Timeout)
