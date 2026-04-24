@@ -11,7 +11,7 @@ import (
 
 func main() {
 	baseURL := getenv("API2KEY_BASE_URL", api2key.DefaultBaseAPIURL)
-	apiKey := getenv("API2KEY_API_KEY", "sk-EA8ADC--")
+	apiKey := getenv("API2KEY_API_KEY", "sk-EA8ADC-D0753265B240967E8B-CFD2FD33AE0E")
 
 	if apiKey == "" {
 		fmt.Println("API2KEY_API_KEY is required for direct credit deduction")

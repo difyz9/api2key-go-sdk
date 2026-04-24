@@ -35,10 +35,11 @@ import "github.com/difyz9/api2key-go-sdk/api2key"
 
 ## 快速开始
 
-建议先按两类场景理解 Go SDK：
+建议先按三类场景理解 Go SDK：
 
-1. 用户态：登录时显式指定 `ProjectID`，登录后创建 API Key 等用户侧能力默认跟随当前 token 项目。
-2. 服务态：积分扣减 / 预扣等内部接口继续显式传 `ProjectID`，并要求 `WithServiceSecret(...)`。
+1. 用户态：`LoginRequest.ProjectID` 现在是可选的，后端会优先使用当前登录项目，再回落到用户绑定项目或默认项目。
+2. API Key 态：适合语音、AI、以及现在已经支持的“基于 API key 直接扣减积分”。
+3. 服务态：`/credits/spend`、`/credits/reserve` 这类内部接口仍然要求 `WithServiceSecret(...)`，并继续显式传 `ProjectID`。
 
 ```go
 package main
@@ -63,7 +64,7 @@ func main() {
 	loginResult, err := client.Login(ctx, api2key.LoginRequest{
 		Email:     "user@example.com",
 		Password:  "Test123456!",
-		ProjectID: "ytb2bili",
+		ProjectID: "ytb2bili", // 可选；直付充值场景可以不传
 	})
 	if err != nil {
 		log.Fatal(err)
@@ -168,7 +169,7 @@ func main() {
 		Subject:     "SDK 直付测试",
 		Amount:      0.01,
 		Description: "Go SDK direct payment example",
-		ProjectID:   "ytb2bili",
+		ProjectID:   "ytb2bili", // 可选；不传时由服务端自动回落默认项目
 		PaymentType: "wechat",
 	})
 	if err != nil {
@@ -177,6 +178,94 @@ func main() {
 	fmt.Println("direct payment order:", directPayment.OrderNo)
 	fmt.Println("direct payment qr code:", directPayment.Data.QRCode)
 }
+```
+
+## 直付充值：不依赖项目必填
+
+`/payment/unified/direct/create` 已经对齐到 SDK，`projectId` 现在是可选参数。
+如果后端已经为用户配置了当前项目、绑定项目或默认项目，可以直接不传 `ProjectID`：
+
+```go
+payment, err := client.CreateDirectPayment(ctx, loginResult.AccessToken, api2key.DirectPaymentCreateRequest{
+	Subject:     "账户直充",
+	Amount:      0.01,
+	Description: "不依赖显式项目 ID 的直付充值",
+	PaymentType: api2key.DefaultDirectPaymentType,
+})
+if err != nil {
+	log.Fatal(err)
+}
+
+fmt.Println(payment.OrderNo)
+fmt.Println(payment.Data.QRCode)
+```
+
+命令行示例：
+
+```bash
+API2KEY_BASE_URL=https://stage.api2key.com \
+API2KEY_EMAIL=your-email@example.com \
+API2KEY_PASSWORD='your-password' \
+API2KEY_EXAMPLE_DO_DIRECT_PAY=1 \
+go run example/main.go
+```
+
+如果你明确要锁定某个项目，再额外传 `API2KEY_PROJECT_ID` 即可。
+
+## API Key 直接扣减积分
+
+`/credits/deduct` 已经补进 SDK，对应方法是 `DeductCredits`。它不再要求 `SERVICE_SECRET`，只需要 API key：
+
+```go
+resp, err := client.DeductCredits(ctx, api2key.DeductCreditsRequest{
+	APIKey:      apiKey,
+	Amount:      10,
+	Service:     "manual-test",
+	TaskID:      "manual-deduct-001",
+	Description: "SDK deduct example",
+})
+if err != nil {
+	log.Fatal(err)
+}
+
+fmt.Println(resp.BalanceAfter)
+fmt.Println(resp.Idempotent)
+```
+
+完整可运行案例见 [credits_ledger/main.go](/Users/apple/opt/difyz_0329/0424/api2key-go-sdk/credits_ledger/main.go)。
+
+命令行示例：
+
+```bash
+API2KEY_BASE_URL=https://stage.api2key.com \
+API2KEY_API_KEY=your-api-key \
+go run credits_ledger/main.go
+```
+
+## 获取当前用户与项目上下文
+
+SDK 已补齐 `GET /auth/me`，方法是 `GetMe`。这个接口支持 JWT 或 API key：
+
+```go
+me, err := client.GetMe(ctx, api2key.GetMeRequest{
+	AccessToken: loginResult.AccessToken,
+})
+if err != nil {
+	log.Fatal(err)
+}
+
+fmt.Println(me.User.Email)
+if me.Scope.ProjectSlug != nil {
+	fmt.Println(*me.Scope.ProjectSlug)
+}
+```
+
+如果用 API key 调用：
+
+```go
+me, err := client.GetMe(ctx, api2key.GetMeRequest{
+	APIKey: apiKey,
+})
 ```
 
 ## AI 在线会话

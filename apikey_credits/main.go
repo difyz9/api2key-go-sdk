@@ -23,7 +23,7 @@ func main() {
 	projectID := getenv("API2KEY_PROJECT_ID", "")
 
 	if apiKey == "" {
-		apiKey = "sk---" // Fallback to default key
+		apiKey = "sk-EA8ADC-D0753265B240967E8B-CFD2FD33AE0E" // Fallback to default key
 	}
 
 	client := api2key.NewClient(
@@ -39,8 +39,8 @@ func main() {
 
 	ledger, err := client.GetLedger(ctx, api2key.GetLedgerRequest{
 		APIKey:    apiKey,
-		Page:      1,
-		Size:      10,
+		Page:      3,
+		Size:      100,
 		ProjectID: projectID,
 	})
 	if err != nil {

@@ -91,13 +91,67 @@ type ExtensionGrantActionRequest struct {
 }
 
 type UserProfile struct {
-	ID          string `json:"id"`
-	Email       string `json:"email"`
-	DisplayName string `json:"displayName"`
-	AvatarURL   string `json:"avatarUrl"`
-	Role        string `json:"role"`
-	Status      string `json:"status"`
-	ProjectID   string `json:"projectId"`
+	ID        string  `json:"id"`
+	Email     string  `json:"email"`
+	Name      string  `json:"name"`
+	Avatar    string  `json:"avatar"`
+	Role      string  `json:"role"`
+	Status    string  `json:"status"`
+	ProjectID *string `json:"projectId,omitempty"`
+}
+
+type MeScope struct {
+	Type        string  `json:"type,omitempty"`
+	ProjectID   *string `json:"projectId,omitempty"`
+	ProjectName *string `json:"projectName,omitempty"`
+	ProjectSlug *string `json:"projectSlug,omitempty"`
+}
+
+type MembershipSummary struct {
+	Tier    string `json:"tier,omitempty"`
+	Status  string `json:"status,omitempty"`
+	EndDate *int64 `json:"endDate,omitempty"`
+}
+
+type ProjectPermissionSummary struct {
+	ID          string  `json:"id,omitempty"`
+	ProjectID   string  `json:"projectId,omitempty"`
+	ProjectName string  `json:"projectName,omitempty"`
+	ProjectSlug string  `json:"projectSlug,omitempty"`
+	Role        string  `json:"role,omitempty"`
+	Tier        string  `json:"tier,omitempty"`
+	Status      string  `json:"status,omitempty"`
+	Credits     int     `json:"credits,omitempty"`
+	StartDate   *int64  `json:"startDate,omitempty"`
+	EndDate     *int64  `json:"endDate,omitempty"`
+	AutoRenew   bool    `json:"autoRenew,omitempty"`
+}
+
+type CurrentUser struct {
+	ID               string                    `json:"id"`
+	Email            string                    `json:"email"`
+	Name             string                    `json:"name"`
+	Avatar           string                    `json:"avatar"`
+	Role             string                    `json:"role"`
+	EmailVerified    bool                      `json:"emailVerified"`
+	EmailVerifiedAt  *int64                    `json:"emailVerifiedAt,omitempty"`
+	Credits          int                       `json:"credits"`
+	ProjectID        *string                   `json:"projectId,omitempty"`
+	ProjectName      *string                   `json:"projectName,omitempty"`
+	ProjectSlug      *string                   `json:"projectSlug,omitempty"`
+	Membership       *MembershipSummary        `json:"membership,omitempty"`
+	ProjectPermission *ProjectPermissionSummary `json:"projectPermission,omitempty"`
+}
+
+type GetMeRequest struct {
+	AccessToken string
+	APIKey      string
+	ProjectID   string
+}
+
+type GetMeResponse struct {
+	Scope MeScope     `json:"scope"`
+	User  CurrentUser `json:"user"`
 }
 
 type UpdateProfileRequest struct {
@@ -108,15 +162,20 @@ type UpdateProfileRequest struct {
 
 type CreateAPIKeyRequest struct {
 	// Name is user-facing only; the backend derives project scope from the current JWT.
-	Name string `json:"name,omitempty"`
+	Name      string  `json:"name,omitempty"`
+	ProjectID *string `json:"projectId,omitempty"`
 }
 
 type APIKeySecret struct {
-	ID        string `json:"id"`
-	Name      string `json:"name"`
-	KeyPrefix string `json:"keyPrefix"`
-	Secret    string `json:"secret"`
-	CreatedAt int64  `json:"createdAt"`
+	ID               string  `json:"id"`
+	Name             string  `json:"name"`
+	KeyPrefix        string  `json:"keyPrefix"`
+	ProjectID        *string `json:"projectId,omitempty"`
+	ProjectName      *string `json:"projectName,omitempty"`
+	ProjectSlug      *string `json:"projectSlug,omitempty"`
+	ProjectScopeCode *string `json:"projectScopeCode,omitempty"`
+	Secret           string  `json:"secret"`
+	CreatedAt        int64   `json:"createdAt"`
 }
 
 type CreateAPIKeyResponse struct {
@@ -124,14 +183,16 @@ type CreateAPIKeyResponse struct {
 }
 
 type UserAPIKey struct {
-	ID         string `json:"id"`
-	Name       string `json:"name"`
-	KeyPrefix  string `json:"keyPrefix"`
-	Secret     string `json:"secret,omitempty"`
-	Active     bool   `json:"active"`
-	LastUsedAt *int64 `json:"lastUsedAt,omitempty"`
-	CreatedAt  int64  `json:"createdAt"`
-	UpdatedAt  int64  `json:"updatedAt"`
+	ID               string  `json:"id"`
+	Name             string  `json:"name"`
+	KeyPrefix        string  `json:"keyPrefix"`
+	ProjectID        *string `json:"projectId,omitempty"`
+	ProjectScopeCode *string `json:"projectScopeCode,omitempty"`
+	Secret           string  `json:"secret,omitempty"`
+	Active           bool    `json:"active"`
+	LastUsedAt       *int64  `json:"lastUsedAt,omitempty"`
+	CreatedAt        int64   `json:"createdAt"`
+	UpdatedAt        int64   `json:"updatedAt"`
 }
 
 type ListAPIKeysResponse struct {
@@ -159,12 +220,12 @@ func (c *Client) Login(ctx context.Context, input LoginRequest) (*LoginResponse,
 	if strings.TrimSpace(input.Password) == "" {
 		return nil, errors.New("password is required")
 	}
-	if strings.TrimSpace(input.ProjectID) == "" {
-		return nil, errors.New("project id is required")
-	}
 	var out LoginResponse
 	endpoint := joinURL(c.baseAPIURL, c.apiPrefix, "auth", "login")
-	headers := map[string]string{"X-Project-Id": input.ProjectID}
+	var headers map[string]string
+	if projectID := strings.TrimSpace(input.ProjectID); projectID != "" {
+		headers = map[string]string{"X-Project-Id": projectID}
+	}
 	if err := c.requestJSON(ctx, http.MethodPost, endpoint, headers, input, &out); err != nil {
 		return nil, err
 	}
@@ -431,12 +492,14 @@ func (c *Client) GetProfile(ctx context.Context, accessToken string) (*UserProfi
 	if strings.TrimSpace(accessToken) == "" {
 		return nil, errors.New("access token is required")
 	}
-	var out UserProfile
+	var out struct {
+		Profile UserProfile `json:"profile"`
+	}
 	endpoint := joinURL(c.baseAPIURL, c.apiPrefix, "user", "profile")
 	if err := c.requestJSON(ctx, http.MethodGet, endpoint, bearerHeaders(accessToken), nil, &out); err != nil {
 		return nil, err
 	}
-	return &out, nil
+	return &out.Profile, nil
 }
 
 func (c *Client) UpdateProfile(ctx context.Context, accessToken string, input UpdateProfileRequest) (*UserProfile, error) {
@@ -446,9 +509,26 @@ func (c *Client) UpdateProfile(ctx context.Context, accessToken string, input Up
 	if input.Name == nil && input.Username == nil && input.Avatar == nil {
 		return nil, errors.New("name, username, or avatar must be provided")
 	}
-	var out UserProfile
+	var out struct {
+		Profile UserProfile `json:"profile"`
+	}
 	endpoint := joinURL(c.baseAPIURL, c.apiPrefix, "user", "profile")
 	if err := c.requestJSON(ctx, http.MethodPut, endpoint, bearerHeaders(accessToken), input, &out); err != nil {
+		return nil, err
+	}
+	return &out.Profile, nil
+}
+
+func (c *Client) GetMe(ctx context.Context, input GetMeRequest) (*GetMeResponse, error) {
+	if strings.TrimSpace(input.AccessToken) == "" && strings.TrimSpace(input.APIKey) == "" {
+		return nil, errors.New("access token or api key is required")
+	}
+	endpoint := joinURL(c.baseAPIURL, c.apiPrefix, "auth", "me")
+	if projectID := strings.TrimSpace(input.ProjectID); projectID != "" {
+		endpoint += "?" + url.Values{"projectId": []string{projectID}}.Encode()
+	}
+	var out GetMeResponse
+	if err := c.requestJSON(ctx, http.MethodGet, endpoint, authHeaders(input.APIKey, input.AccessToken), nil, &out); err != nil {
 		return nil, err
 	}
 	return &out, nil
@@ -481,6 +561,13 @@ func (c *Client) UpdateSettings(ctx context.Context, accessToken string, input m
 func (c *Client) CreateAPIKey(ctx context.Context, accessToken string, input CreateAPIKeyRequest) (*CreateAPIKeyResponse, error) {
 	if strings.TrimSpace(accessToken) == "" {
 		return nil, errors.New("access token is required")
+	}
+	if input.ProjectID != nil {
+		projectID := strings.TrimSpace(*input.ProjectID)
+		if projectID == "" {
+			return nil, errors.New("project id cannot be empty when provided")
+		}
+		input.ProjectID = &projectID
 	}
 	var out CreateAPIKeyResponse
 	endpoint := joinURL(c.baseAPIURL, c.apiPrefix, "user", "api-keys")
@@ -578,7 +665,7 @@ func (c *Client) EnsureAPIKey(ctx context.Context, accessToken string, input Cre
 		}, nil
 	}
 
-	created, err := c.CreateAPIKey(ctx, accessToken, CreateAPIKeyRequest{Name: keyName})
+	created, err := c.CreateAPIKey(ctx, accessToken, input)
 	if err != nil {
 		return nil, err
 	}

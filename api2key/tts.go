@@ -284,8 +284,8 @@ func (c *Client) PollASRTaskWithOptions(ctx context.Context, input ASRTaskQueryR
 }
 
 func (c *Client) submitASR(ctx context.Context, action string, input ASRRequest) (*ASRTaskResponse, error) {
-	if strings.TrimSpace(input.APIKey) == "" {
-		return nil, errors.New("api key is required")
+	if strings.TrimSpace(input.APIKey) == "" && strings.TrimSpace(input.AccessToken) == "" {
+		return nil, errors.New("api key or access token is required")
 	}
 	if strings.TrimSpace(input.AudioFilePath) == "" && strings.TrimSpace(input.AudioURL) == "" {
 		return nil, errors.New("audio file path or audio url is required")
@@ -306,7 +306,7 @@ func (c *Client) submitASR(ctx context.Context, action string, input ASRRequest)
 	if encoded := query.Encode(); encoded != "" {
 		endpoint += "?" + encoded
 	}
-	headers := map[string]string{"x-api-key": input.APIKey}
+	headers := authHeaders(input.APIKey, input.AccessToken)
 
 	if strings.TrimSpace(input.AudioURL) != "" {
 		payload := map[string]any{
@@ -354,6 +354,23 @@ func (c *Client) DownloadSpeechAudio(ctx context.Context, key string) (*Download
 		return nil, errors.New("storage key is required")
 	}
 	endpoint := joinURL(c.speechURL, "api", "files", "download") + "/" + escapeStorageKeyPath(key)
+	raw, headers, err := c.requestBinary(ctx, http.MethodGet, endpoint, nil, nil)
+	if err != nil {
+		return nil, err
+	}
+	return &DownloadSpeechAudioResult{
+		Audio:       raw,
+		ContentType: headers.Get("Content-Type"),
+		FileName:    headerFilename(headers.Get("Content-Disposition")),
+		Headers:     headers,
+	}, nil
+}
+
+func (c *Client) DownloadSpeechAudioByQuery(ctx context.Context, key string) (*DownloadSpeechAudioResult, error) {
+	if strings.TrimSpace(key) == "" {
+		return nil, errors.New("storage key is required")
+	}
+	endpoint := joinURL(c.speechURL, "api", "files", "download") + "?" + url.Values{"key": []string{key}}.Encode()
 	raw, headers, err := c.requestBinary(ctx, http.MethodGet, endpoint, nil, nil)
 	if err != nil {
 		return nil, err

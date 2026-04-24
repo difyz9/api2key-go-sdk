@@ -327,9 +327,6 @@ func (s *AISession) resolveConversationID(conversationID string) string {
 }
 
 func (c *Client) ListAIModels(ctx context.Context, input ListAIModelsRequest) (*ListAIModelsResponse, error) {
-	if strings.TrimSpace(input.APIKey) == "" && strings.TrimSpace(input.AccessToken) == "" {
-		return nil, errors.New("api key or access token is required")
-	}
 	query := url.Values{}
 	if input.OnlyAvailable {
 		query.Set("onlyAvailable", "true")

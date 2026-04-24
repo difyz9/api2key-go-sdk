@@ -22,15 +22,16 @@ type GetProductRequest struct {
 type GetProductResponse map[string]any
 
 func (c *Client) ListProducts(ctx context.Context, input ListProductsRequest) (*ListProductsResponse, error) {
-	if strings.TrimSpace(input.ProjectID) == "" {
-		return nil, errors.New("project id is required")
+	query := url.Values{}
+	if projectID := strings.TrimSpace(input.ProjectID); projectID != "" {
+		query.Set("projectId", projectID)
 	}
 
-	query := url.Values{}
-	query.Set("projectId", input.ProjectID)
-
 	var out ListProductsResponse
-	endpoint := joinURL(c.baseAPIURL, c.apiPrefix, "products") + "?" + query.Encode()
+	endpoint := joinURL(c.baseAPIURL, c.apiPrefix, "products")
+	if encoded := query.Encode(); encoded != "" {
+		endpoint += "?" + encoded
+	}
 	if err := c.requestJSON(ctx, http.MethodGet, endpoint, nil, nil, &out); err != nil {
 		return nil, err
 	}
@@ -38,18 +39,20 @@ func (c *Client) ListProducts(ctx context.Context, input ListProductsRequest) (*
 }
 
 func (c *Client) GetProduct(ctx context.Context, input GetProductRequest) (*GetProductResponse, error) {
-	if strings.TrimSpace(input.ProjectID) == "" {
-		return nil, errors.New("project id is required")
-	}
 	if strings.TrimSpace(input.ProductID) == "" {
 		return nil, errors.New("product id is required")
 	}
 
 	query := url.Values{}
-	query.Set("projectId", input.ProjectID)
+	if projectID := strings.TrimSpace(input.ProjectID); projectID != "" {
+		query.Set("projectId", projectID)
+	}
 
 	var out GetProductResponse
-	endpoint := joinURL(c.baseAPIURL, c.apiPrefix, "products", escapePath(input.ProductID)) + "?" + query.Encode()
+	endpoint := joinURL(c.baseAPIURL, c.apiPrefix, "products", escapePath(input.ProductID))
+	if encoded := query.Encode(); encoded != "" {
+		endpoint += "?" + encoded
+	}
 	if err := c.requestJSON(ctx, http.MethodGet, endpoint, nil, nil, &out); err != nil {
 		return nil, err
 	}

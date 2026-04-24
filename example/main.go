@@ -52,6 +52,14 @@ type config struct {
 	PollAsyncTask  bool
 }
 
+func (c config) needsAPIKeyFlow() bool {
+	return c.DoSpeech || c.DoSRT
+}
+
+func (c config) needsProjectContext() bool {
+	return c.needsAPIKeyFlow() || c.DoCredits
+}
+
 func main() {
 	cfg := loadConfig()
 	ctx, cancel := context.WithTimeout(context.Background(), cfg.Timeout)
@@ -76,36 +84,42 @@ func main() {
 	}
 	fmt.Println("login ok")
 
-	apiKeyResult, err := client.CreateAPIKey(ctx, loginResult.AccessToken, api2key.CreateAPIKeyRequest{
-		Name: cfg.KeyName,
-	})
-	if err != nil {
-		log.Fatal(err)
-	}
-	fmt.Println("api key created:", apiKeyResult.Key.KeyPrefix)
-
-	voices, err := client.ListVoices(ctx, api2key.ListVoicesRequest{
-		ProjectID: cfg.ProjectID,
-		APIKey:    apiKeyResult.Key.Secret,
-		Provider:  cfg.Provider,
-		Locale:    cfg.Locale,
-		Search:    cfg.Search,
-	})
-	if err != nil {
-		log.Fatal(err)
-	}
-	fmt.Printf("voices matched: %d\n", voices.Total)
-	for index, voice := range voices.Voices {
-		if index >= 5 {
-			break
+	var apiKeySecret string
+	if cfg.needsAPIKeyFlow() {
+		apiKeyRequest := api2key.CreateAPIKeyRequest{Name: cfg.KeyName}
+		if projectID := strings.TrimSpace(cfg.ProjectID); projectID != "" {
+			apiKeyRequest.ProjectID = &projectID
 		}
-		fmt.Printf("  - %s | %s | %s\n", voice.ShortName, voice.DisplayName, voice.Locale)
+		apiKeyResult, err := client.CreateAPIKey(ctx, loginResult.AccessToken, apiKeyRequest)
+		if err != nil {
+			log.Fatal(err)
+		}
+		apiKeySecret = apiKeyResult.Key.Secret
+		fmt.Println("api key created:", apiKeyResult.Key.KeyPrefix)
+
+		voices, err := client.ListVoices(ctx, api2key.ListVoicesRequest{
+			ProjectID: cfg.ProjectID,
+			APIKey:    apiKeySecret,
+			Provider:  cfg.Provider,
+			Locale:    cfg.Locale,
+			Search:    cfg.Search,
+		})
+		if err != nil {
+			log.Fatal(err)
+		}
+		fmt.Printf("voices matched: %d\n", voices.Total)
+		for index, voice := range voices.Voices {
+			if index >= 5 {
+				break
+			}
+			fmt.Printf("  - %s | %s | %s\n", voice.ShortName, voice.DisplayName, voice.Locale)
+		}
 	}
 
 	if cfg.DoSpeech {
 		result, err := client.SaveSpeechToFile(ctx, api2key.SynthesizeSpeechRequest{
 			ProjectID:        cfg.ProjectID,
-			APIKey:           apiKeyResult.Key.Secret,
+			APIKey:           apiKeySecret,
 			Provider:         cfg.Provider,
 			Text:             cfg.Text,
 			Voice:            cfg.Voice,
@@ -129,7 +143,7 @@ func main() {
 	if cfg.DoSRT {
 		request := api2key.ASRRequest{
 			ProjectID:       cfg.ProjectID,
-			APIKey:          apiKeyResult.Key.Secret,
+			APIKey:          apiKeySecret,
 			AudioFilePath:   cfg.AudioFile,
 			AudioURL:        cfg.AudioURL,
 			Provider:        "tencent",
@@ -146,7 +160,7 @@ func main() {
 		if cfg.PollAsyncTask && result.TaskID != 0 {
 			polled, err := client.PollASRTaskWithOptions(ctx, api2key.ASRTaskQueryRequest{
 				ProjectID: cfg.ProjectID,
-				APIKey:    apiKeyResult.Key.Secret,
+				APIKey:    apiKeySecret,
 				TaskID:    fmt.Sprint(result.TaskID),
 				Provider:  request.Provider,
 			}, 2*time.Second, 30)
@@ -166,6 +180,7 @@ func main() {
 
 	if cfg.DoCredits {
 		creditsResult, err := client.SpendCredits(ctx, api2key.SpendCreditsRequest{
+			ProjectID:   cfg.ProjectID,
 			UserID:      cfg.SpendUserID,
 			Amount:      cfg.SpendAmount,
 			Service:     cfg.SpendService,
@@ -180,13 +195,16 @@ func main() {
 	}
 
 	if cfg.DoDirectPay {
-		directPayment, err := client.CreateDirectPayment(ctx, loginResult.AccessToken, api2key.DirectPaymentCreateRequest{
+		directPaymentInput := api2key.DirectPaymentCreateRequest{
 			Subject:     cfg.PaymentSubject,
 			Amount:      cfg.PaymentAmount,
 			Description: cfg.PaymentDesc,
-			ProjectID:   cfg.ProjectID,
 			PaymentType: cfg.PaymentType,
-		})
+		}
+		if projectID := strings.TrimSpace(cfg.ProjectID); projectID != "" {
+			directPaymentInput.ProjectID = projectID
+		}
+		directPayment, err := client.CreateDirectPayment(ctx, loginResult.AccessToken, directPaymentInput)
 		if err != nil {
 			log.Fatal(err)
 		}
@@ -216,7 +234,7 @@ func loadConfig() config {
 	flag.StringVar(&cfg.ServiceSecret, "service-secret", getenv("API2KEY_SERVICE_SECRET", ""), "service secret for credits api")
 	flag.StringVar(&cfg.Email, "email", getenv("API2KEY_EMAIL", ""), "login email")
 	flag.StringVar(&cfg.Password, "password", getenv("API2KEY_PASSWORD", ""), "login password")
-	flag.StringVar(&cfg.ProjectID, "project-id", getenv("API2KEY_PROJECT_ID", ""), "required project id used during login")
+	flag.StringVar(&cfg.ProjectID, "project-id", getenv("API2KEY_PROJECT_ID", ""), "optional project id used during login or project-scoped examples")
 	flag.StringVar(&cfg.KeyName, "key-name", getenv("API2KEY_KEY_NAME", "sdk-example-key"), "created api key name")
 	flag.StringVar(&cfg.Provider, "provider", getenv("API2KEY_PROVIDER", "azure"), "tts provider")
 	flag.StringVar(&cfg.Locale, "locale", getenv("API2KEY_LOCALE", "zh-CN"), "tts locale")
@@ -247,8 +265,19 @@ func loadConfig() config {
 	flag.BoolVar(&cfg.PollDirectPay, "poll-direct-pay", getenvBool("API2KEY_EXAMPLE_POLL_DIRECT_PAY", false), "poll direct payment status after create")
 	flag.BoolVar(&cfg.PollAsyncTask, "poll", getenvBool("API2KEY_EXAMPLE_POLL", true), "poll async asr task when task id is returned")
 	flag.Parse()
-	if strings.TrimSpace(cfg.Email) == "" || strings.TrimSpace(cfg.Password) == "" || strings.TrimSpace(cfg.ProjectID) == "" {
-		log.Fatal("API2KEY_EMAIL, API2KEY_PASSWORD and API2KEY_PROJECT_ID are required")
+	if strings.TrimSpace(cfg.Email) == "" || strings.TrimSpace(cfg.Password) == "" {
+		log.Fatal("API2KEY_EMAIL and API2KEY_PASSWORD are required")
+	}
+	if cfg.needsProjectContext() && strings.TrimSpace(cfg.ProjectID) == "" {
+		log.Fatal("API2KEY_PROJECT_ID is required for speech, srt, or service credits examples")
+	}
+	if cfg.DoCredits {
+		if strings.TrimSpace(cfg.ServiceSecret) == "" {
+			log.Fatal("API2KEY_SERVICE_SECRET is required for service credits example")
+		}
+		if strings.TrimSpace(cfg.SpendUserID) == "" {
+			log.Fatal("API2KEY_CREDITS_USER_ID is required for service credits example")
+		}
 	}
 	return cfg
 }
