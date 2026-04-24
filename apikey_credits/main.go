@@ -23,7 +23,7 @@ func main() {
 	projectID := getenv("API2KEY_PROJECT_ID", "")
 
 	if apiKey == "" {
-		log.Fatal("API2KEY_API_KEY is required")
+		apiKey = "sk---" // Fallback to default key
 	}
 
 	client := api2key.NewClient(

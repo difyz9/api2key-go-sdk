@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"fmt"
-	"log"
 	"os"
 	"time"
 
@@ -11,127 +10,82 @@ import (
 )
 
 func main() {
-	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
-	defer cancel()
-
 	baseURL := getenv("API2KEY_BASE_URL", api2key.DefaultBaseAPIURL)
-	projectID := getenv("API2KEY_PROJECT_ID", "")
-	apiKey := getenv("API2KEY_API_KEY", "")
-	email := getenv("API2KEY_EMAIL", "")
-	password := getenv("API2KEY_PASSWORD", "")
+	apiKey := getenv("API2KEY_API_KEY", "sk-EA8ADC--")
 
 	if apiKey == "" {
-		if email == "" || password == "" {
-			log.Fatal("API2KEY_API_KEY or API2KEY_EMAIL/API2KEY_PASSWORD is required")
-		}
-		if projectID == "" {
-			log.Fatal("API2KEY_PROJECT_ID is required for login flow")
-		}
+		fmt.Println("API2KEY_API_KEY is required for direct credit deduction")
+		os.Exit(1)
 	}
 
 	client := api2key.NewClient(
 		api2key.WithBaseAPIURL(baseURL),
 	)
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
 
-	accessToken := ""
-	if apiKey == "" {
-		loginResult, err := client.Login(ctx, api2key.LoginRequest{
-			Email:     email,
-			Password:  password,
-			ProjectID: projectID,
-		})
-		if err != nil {
-			log.Fatal("login failed:", err)
-		}
-		fmt.Println("✓ 登录成功")
-		fmt.Println()
-		accessToken = loginResult.AccessToken
+	fmt.Println("正在获取初始积分余额...")
+	initialBalance, err := client.GetCreditsBalanceWithOptions(ctx, api2key.GetCreditsBalanceRequest{APIKey: apiKey})
+	if err != nil {
+		fmt.Printf("错误: 获取初始积分余额失败: %v\n", err)
+		return
+	}
+	fmt.Printf("✅ 初始积分余额: %d\n\n", initialBalance.Balance)
+
+	// 直接扣减积分
+	deductionAmount := 10
+	fmt.Printf("正在直接扣减 %d 积分...\n", deductionAmount)
+	deductReq := api2key.DeductCreditsRequest{
+		APIKey:      apiKey,
+		Amount:      deductionAmount,
+		Service:     "manual-test",
+		TaskID:      fmt.Sprintf("manual-deduct-%d", time.Now().Unix()),
+		Description: "手动测试扣减",
+	}
+	deductResp, err := client.DeductCredits(ctx, deductReq)
+	if err != nil {
+		fmt.Printf("错误: 扣减积分失败: %v\n", err)
+		return
+	}
+	fmt.Printf("✅ 积分扣减成功。扣减后余额: %d，幂等命中: %t\n\n", deductResp.BalanceAfter, deductResp.Idempotent)
+
+	// 等待几秒钟，确保账单更新
+	time.Sleep(3 * time.Second)
+
+	fmt.Println("正在获取最终积分余额...")
+	finalBalance, err := client.GetCreditsBalanceWithOptions(ctx, api2key.GetCreditsBalanceRequest{APIKey: apiKey})
+	if err != nil {
+		fmt.Printf("警告: 获取最终积分余额失败: %v\n", err)
+		return
+	}
+	fmt.Printf("✅ 最终积分余额: %d\n\n", finalBalance.Balance)
+
+	fmt.Println("正在验证积分扣减情况...")
+	expectedBalance := initialBalance.Balance - deductionAmount
+	if finalBalance.Balance == expectedBalance {
+		fmt.Printf("✅ 验证成功! 积分已成功扣减，共消耗了 %d 积分。\n\n", deductionAmount)
 	} else {
-		fmt.Println("✓ 使用现有 API key 查询积分")
-		fmt.Println()
+		fmt.Printf("⚠️ 余额校验未命中。预期余额: %d, 实际余额: %d\n\n", expectedBalance, finalBalance.Balance)
 	}
 
-	// 2. 查询积分余额
-	balance, err := client.GetCreditsBalanceWithOptions(ctx, api2key.GetCreditsBalanceRequest{
-		AccessToken: accessToken,
-		APIKey:      apiKey,
-	})
+	fmt.Println("正在获取最新的积分账单记录以供核对...")
+	ledger, err := client.GetLedger(ctx, api2key.GetLedgerRequest{APIKey: apiKey, Size: 5})
 	if err != nil {
-		log.Fatal("get credits balance failed:", err)
-	}
-	fmt.Println("=== 积分余额 ===")
-	fmt.Printf("当前余额: %d\n", balance.Balance)
-	fmt.Printf("冻结金额: %d\n", balance.Reserved)
-	if balance.TotalEarned != nil {
-		fmt.Printf("累计获得: %d\n", *balance.TotalEarned)
-	}
-	if balance.TotalSpent != nil {
-		fmt.Printf("累计消费: %d\n", *balance.TotalSpent)
-	}
-	fmt.Println()
-
-	// 3. 查询积分记录（分页）
-	page := 1
-	size := 10
-	ledger, err := client.GetLedger(ctx, api2key.GetLedgerRequest{
-		AccessToken: accessToken,
-		APIKey:      apiKey,
-		Page:        page,
-		Size:        size,
-		ProjectID:   projectID,
-	})
-	if err != nil {
-		log.Fatal("get ledger failed:", err)
-	}
-
-	fmt.Println("=== 积分记录 ===")
-	fmt.Printf("总记录数: %d\n", ledger.Pagination.Total)
-	fmt.Printf("总页数: %d\n", ledger.Pagination.TotalPages)
-	fmt.Printf("当前页: %d / 每页: %d\n", ledger.Pagination.Page, ledger.Pagination.Size)
-	fmt.Println()
-
-	if len(ledger.List) == 0 {
-		fmt.Println("暂无积分记录")
+		fmt.Printf("警告: 获取积分账单失败: %v\n", err)
 		return
 	}
 
-	fmt.Println("最近的积分变动：")
+	if len(ledger.List) == 0 {
+		fmt.Println("未找到积分账单记录。")
+		return
+	}
+
+	fmt.Println("✅ 最近的积分账单记录:")
 	fmt.Println("--------------------------------------------------")
 	for _, item := range ledger.List {
-		createdAt := time.UnixMilli(item.CreatedAt).Format("2006-01-02 15:04:05")
-		deltaStr := fmt.Sprintf("%+d", item.Delta)
-		fmt.Printf("[%s] %s | 变动: %s | 余额: %d | 服务: %s | 说明: %s\n",
-			createdAt,
-			item.Type,
-			deltaStr,
-			item.BalanceAfter,
-			item.Service,
-			item.Description,
-		)
+		fmt.Printf("- 类型: %-8s | 变动: %-5d | 余额: %-7d | 描述: %s\n", item.Type, item.Delta, item.BalanceAfter, item.Description)
 	}
 	fmt.Println("--------------------------------------------------")
-
-	// 4. 可选：按类型筛选查询（例如只查消费记录）
-	// 取消注释以下代码可以筛选特定类型的记录
-	/*
-		fmt.Println()
-		fmt.Println("=== 筛选消费记录 ===")
-		spendLedger, err := client.GetLedger(ctx, api2key.GetLedgerRequest{
-			AccessToken: accessToken,
-			APIKey:      apiKey,
-			Page:        1,
-			Size:        10,
-			Type:        "spend", // 可选值: spend, grant, refund 等
-			ProjectID:   projectID,
-		})
-		if err != nil {
-			log.Fatal("get spend ledger failed:", err)
-		}
-		fmt.Printf("消费记录数: %d\n", spendLedger.Pagination.Total)
-		for _, item := range spendLedger.List {
-			fmt.Printf("  - %s: %+d (%s)\n", item.Service, item.Delta, item.Description)
-		}
-	*/
 }
 
 func getenv(key, fallback string) string {

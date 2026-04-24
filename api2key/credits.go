@@ -73,6 +73,17 @@ type GetLedgerResponse struct {
 	Pagination LedgerPagination `json:"pagination"`
 }
 
+type DeductCreditsRequest struct {
+	AccessToken string `json:"-"`
+	APIKey      string `json:"-"`
+	Amount      int    `json:"amount"`
+	Service     string `json:"service"`
+	TaskID      string `json:"taskId,omitempty"`
+	Description string `json:"description,omitempty"`
+}
+
+type DeductCreditsResponse = SpendCreditsResponse
+
 func (c *Client) GetCreditsBalance(ctx context.Context, accessToken string) (*CreditsBalanceResponse, error) {
 	return c.GetCreditsBalanceWithOptions(ctx, GetCreditsBalanceRequest{AccessToken: accessToken})
 }
@@ -115,6 +126,24 @@ func (c *Client) GetLedger(ctx context.Context, input GetLedgerRequest) (*GetLed
 	}
 	var out GetLedgerResponse
 	if err := c.requestJSON(ctx, http.MethodGet, endpoint, authHeaders(input.APIKey, input.AccessToken), nil, &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
+func (c *Client) DeductCredits(ctx context.Context, input DeductCreditsRequest) (*DeductCreditsResponse, error) {
+	if strings.TrimSpace(input.AccessToken) == "" && strings.TrimSpace(input.APIKey) == "" {
+		return nil, errors.New("access token or api key is required")
+	}
+	if input.Amount <= 0 {
+		return nil, errors.New("amount must be greater than 0")
+	}
+	if strings.TrimSpace(input.Service) == "" {
+		return nil, errors.New("service is required")
+	}
+	var out DeductCreditsResponse
+	endpoint := joinURL(c.baseAPIURL, c.apiPrefix, "credits", "deduct")
+	if err := c.requestJSON(ctx, http.MethodPost, endpoint, authHeaders(input.APIKey, input.AccessToken), input, &out); err != nil {
 		return nil, err
 	}
 	return &out, nil

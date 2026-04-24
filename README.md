@@ -453,11 +453,12 @@ downloaded, err := client.DownloadSpeechAudio(ctx, result.StorageKey)
 
 注意：现在服务端列表接口会返回 `secret`。这个案例会优先复用“列表里已有明文 secret 的 key”；如果现有 key 都没有明文 `secret`，就会新创建一个 key，并返回新 key 的完整 apikey。
 
-仓库里有五个示例：
+仓库里有多个可运行示例：
 
 - `ensure_apikey/main.go`：独立 apikey 案例，先查用户 apikey 列表，有就直接取一个，没有才创建，避免重复创建。
 - `apikey_credits/main.go`：纯 API key 查询积分案例，不走登录，直接查询余额和最近流水。
 - `ai_chat/main.go`：最小 AI 对话示例，只需要 `baseUrl + apiKey`。
+- `demo02/main.go`：字幕翻译示例，直接读取 `.srt`，使用 SDK 封装的 AI chat 按批次翻译后输出新的 `.srt`。
 - `example/main.go`：通用 CLI 风格示例，适合串联登录、建 key、查 voices、做 speech / SRT / credits。
 - `demo01/main.go`：更短的烟雾测试示例，默认会跑登录、建 key、语音合成和一次 ASR 轮询。
 - `subtitle_tts/main.go`：登录后自动加载或创建用户 API Key，再把 `.srt` 或 `.txt` 文本逐段合成音频，并打印积分余额前后变化。
@@ -504,6 +505,21 @@ API2KEY_API_KEY='sk-your-api-key' \
 API2KEY_PROJECT_ID='ytb2bili' \
 go run ./apikey_credits
 ```
+
+如果你的目标是“直接把现有英文字幕翻译成中文字幕”，可以运行 `demo02`：
+
+```bash
+API2KEY_BASE_URL=https://stage.api2key.com \
+API2KEY_API_KEY='sk-your-api-key' \
+API2KEY_AI_MODEL='openai/gpt-4o-mini' \
+DEMO02_INPUT=./demo02/tp7Ojf7dPVI.srt \
+DEMO02_OUTPUT=./demo02/tp7Ojf7dPVI.zh-CN.srt \
+DEMO02_SOURCE_LANG='en' \
+DEMO02_TARGET_LANG='zh-CN' \
+go run ./demo02
+```
+
+这个案例会先用模型判断是否真的需要翻译，再按批次和前后文做字幕翻译，最后输出新的 `.srt` 文件。
 
 通用 CLI 示例仍然保留在 `example/main.go`，只跑登录、创建 key、查询语音列表：
 
