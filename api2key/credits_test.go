@@ -2,7 +2,6 @@ package api2key
 
 import (
 	"context"
-	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -74,65 +73,48 @@ func TestGetLedgerWithAPIKeyAndProjectID(t *testing.T) {
 	}
 }
 
-func TestSpendCreditsRequiresProjectID(t *testing.T) {
-	client := NewClient(WithServiceSecret("secret"))
+func TestDeductCreditsRequiresAuth(t *testing.T) {
+	client := NewClient()
 
-	_, err := client.SpendCredits(context.Background(), SpendCreditsRequest{
-		UserID:  "user-1",
+	_, err := client.DeductCredits(context.Background(), DeductCreditsRequest{
 		Amount:  10,
 		Service: "translation",
 	})
-	if err == nil || err.Error() != "project id is required" {
-		t.Fatalf("expected missing project id error, got %v", err)
+	if err == nil || err.Error() != "access token or api key is required" {
+		t.Fatalf("expected missing auth error, got %v", err)
 	}
 }
 
-func TestReserveCreditsSendsProjectID(t *testing.T) {
+func TestDeductCreditsSendsAPIKey(t *testing.T) {
 	t.Parallel()
-
-	type requestBody struct {
-		ProjectID string `json:"projectId"`
-		UserID    string `json:"userId"`
-		TaskID    string `json:"taskId"`
-		Service   string `json:"service"`
-		Amount    int    `json:"amount"`
-	}
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
 			t.Fatalf("unexpected method: %s", r.Method)
 		}
-		if got := r.Header.Get("X-Service-Secret"); got != "secret" {
-			t.Fatalf("unexpected service secret: %s", got)
+		if got := r.Header.Get("x-api-key"); got != "sk-test-123" {
+			t.Fatalf("unexpected x-api-key: %s", got)
 		}
-
-		var payload requestBody
-		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
-			t.Fatalf("decode request: %v", err)
-		}
-		if payload.ProjectID != "ytb2bili" {
-			t.Fatalf("unexpected project id: %s", payload.ProjectID)
+		if !strings.Contains(r.URL.Path, "/credits/deduct") {
+			t.Fatalf("unexpected path: %s", r.URL.Path)
 		}
 
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"code":200,"message":"ok","data":{"reservation_id":"res_123","projectId":"ytb2bili","scopeType":"project"}}`))
+		_, _ = w.Write([]byte(`{"code":200,"message":"ok","data":{"balanceAfter":90,"projectId":"ytb2bili","scopeType":"project"}}`))
 	}))
 	defer server.Close()
 
-	client := NewClient(
-		WithBaseAPIURL(server.URL),
-		WithServiceSecret("secret"),
-	)
+	client := NewClient(WithBaseAPIURL(server.URL))
 
-	result, err := client.ReserveCredits(context.Background(), ReserveCreditsRequest{
-		ProjectID: "ytb2bili",
-		UserID:    "user-1",
-		TaskID:    "task-1",
-		Service:   "translation",
-		Amount:    10,
+	result, err := client.DeductCredits(context.Background(), DeductCreditsRequest{
+		APIKey:      "sk-test-123",
+		Amount:      10,
+		Service:     "translation",
+		TaskID:      "task-1",
+		Description: "sdk test",
 	})
 	if err != nil {
-		t.Fatalf("ReserveCredits returned error: %v", err)
+		t.Fatalf("DeductCredits returned error: %v", err)
 	}
 	if result.ProjectID != "ytb2bili" {
 		t.Fatalf("unexpected response project id: %s", result.ProjectID)
@@ -140,7 +122,7 @@ func TestReserveCreditsSendsProjectID(t *testing.T) {
 	if result.ScopeType != "project" {
 		t.Fatalf("unexpected scope type: %s", result.ScopeType)
 	}
-	if result.ReservationID != "res_123" {
-		t.Fatalf("unexpected reservation id: %s", result.ReservationID)
+	if result.BalanceAfter != 90 {
+		t.Fatalf("unexpected balance after: %d", result.BalanceAfter)
 	}
 }

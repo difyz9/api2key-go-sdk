@@ -17,7 +17,6 @@ import (
 type config struct {
 	BaseAPIURL     string
 	SpeechURL      string
-	ServiceSecret  string
 	Email          string
 	Password       string
 	ProjectID      string
@@ -35,7 +34,6 @@ type config struct {
 	AudioFile      string
 	AudioURL       string
 	EngineModel    string
-	SpendUserID    string
 	SpendAmount    int
 	SpendService   string
 	SpendTaskID    string
@@ -53,11 +51,11 @@ type config struct {
 }
 
 func (c config) needsAPIKeyFlow() bool {
-	return c.DoSpeech || c.DoSRT
+	return c.DoSpeech || c.DoSRT || c.DoCredits
 }
 
 func (c config) needsProjectContext() bool {
-	return c.needsAPIKeyFlow() || c.DoCredits
+	return c.DoSpeech || c.DoSRT
 }
 
 func main() {
@@ -67,7 +65,6 @@ func main() {
 
 	options := []api2key.Option{
 		api2key.WithBaseAPIURL(cfg.BaseAPIURL),
-		api2key.WithServiceSecret(cfg.ServiceSecret),
 	}
 	if strings.TrimSpace(cfg.SpeechURL) != "" {
 		options = append(options, api2key.WithSpeechURL(cfg.SpeechURL))
@@ -179,13 +176,12 @@ func main() {
 	}
 
 	if cfg.DoCredits {
-		creditsResult, err := client.SpendCredits(ctx, api2key.SpendCreditsRequest{
-			ProjectID:   cfg.ProjectID,
-			UserID:      cfg.SpendUserID,
+		creditsResult, err := client.DeductCredits(ctx, api2key.DeductCreditsRequest{
+			APIKey:      apiKeySecret,
 			Amount:      cfg.SpendAmount,
 			Service:     cfg.SpendService,
 			TaskID:      cfg.SpendTaskID,
-			Description: "sdk example spend",
+			Description: "sdk example deduct",
 		})
 		if err != nil {
 			log.Fatal(err)
@@ -231,7 +227,6 @@ func loadConfig() config {
 	var cfg config
 	flag.StringVar(&cfg.BaseAPIURL, "base-url", getenv("API2KEY_BASE_URL", api2key.DefaultBaseAPIURL), "base api url")
 	flag.StringVar(&cfg.SpeechURL, "speech-url", getenv("API2KEY_SPEECH_URL", getenv("API2KEY_TTS_URL", "")), "optional speech root url override")
-	flag.StringVar(&cfg.ServiceSecret, "service-secret", getenv("API2KEY_SERVICE_SECRET", ""), "service secret for credits api")
 	flag.StringVar(&cfg.Email, "email", getenv("API2KEY_EMAIL", ""), "login email")
 	flag.StringVar(&cfg.Password, "password", getenv("API2KEY_PASSWORD", ""), "login password")
 	flag.StringVar(&cfg.ProjectID, "project-id", getenv("API2KEY_PROJECT_ID", ""), "optional project id used during login or project-scoped examples")
@@ -249,7 +244,6 @@ func loadConfig() config {
 	flag.StringVar(&cfg.AudioFile, "audio-file", getenv("API2KEY_AUDIO_FILE", ""), "audio file path for srt")
 	flag.StringVar(&cfg.AudioURL, "audio-url", getenv("API2KEY_AUDIO_URL", ""), "audio url for srt")
 	flag.StringVar(&cfg.EngineModel, "engine-model", getenv("API2KEY_ENGINE_MODEL", "16k_zh"), "asr engine model")
-	flag.StringVar(&cfg.SpendUserID, "spend-user-id", getenv("API2KEY_CREDITS_USER_ID", ""), "credits target user id")
 	flag.IntVar(&cfg.SpendAmount, "spend-amount", getenvInt("API2KEY_CREDITS_AMOUNT", 10), "credits amount")
 	flag.StringVar(&cfg.SpendService, "spend-service", getenv("API2KEY_CREDITS_SERVICE", "ai_chat"), "credits service name")
 	flag.StringVar(&cfg.SpendTaskID, "spend-task-id", getenv("API2KEY_CREDITS_TASK_ID", fmt.Sprintf("sdk-example-%d", time.Now().Unix())), "credits task id")
@@ -269,15 +263,7 @@ func loadConfig() config {
 		log.Fatal("API2KEY_EMAIL and API2KEY_PASSWORD are required")
 	}
 	if cfg.needsProjectContext() && strings.TrimSpace(cfg.ProjectID) == "" {
-		log.Fatal("API2KEY_PROJECT_ID is required for speech, srt, or service credits examples")
-	}
-	if cfg.DoCredits {
-		if strings.TrimSpace(cfg.ServiceSecret) == "" {
-			log.Fatal("API2KEY_SERVICE_SECRET is required for service credits example")
-		}
-		if strings.TrimSpace(cfg.SpendUserID) == "" {
-			log.Fatal("API2KEY_CREDITS_USER_ID is required for service credits example")
-		}
+		log.Fatal("API2KEY_PROJECT_ID is required for speech or srt examples")
 	}
 	return cfg
 }

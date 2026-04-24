@@ -26,7 +26,6 @@ type Client struct {
 	baseAPIURL    string
 	speechURL     string
 	apiPrefix     string
-	serviceSecret string
 	httpClient    *http.Client
 }
 
@@ -35,7 +34,6 @@ type Config struct {
 	SpeechURL     string
 	TTSURL        string
 	APIPrefix     string
-	ServiceSecret string
 	HTTPClient    *http.Client
 }
 
@@ -65,7 +63,6 @@ func NewClient(options ...Option) *Client {
 		baseAPIURL:    baseAPIURL,
 		speechURL:     speechURL,
 		apiPrefix:     normalizeAPIPrefix(config.APIPrefix),
-		serviceSecret: strings.TrimSpace(config.ServiceSecret),
 		httpClient:    config.HTTPClient,
 	}
 }
@@ -92,12 +89,6 @@ func WithTTSURL(rawURL string) Option {
 func WithAPIPrefix(prefix string) Option {
 	return func(config *Config) {
 		config.APIPrefix = prefix
-	}
-}
-
-func WithServiceSecret(secret string) Option {
-	return func(config *Config) {
-		config.ServiceSecret = secret
 	}
 }
 

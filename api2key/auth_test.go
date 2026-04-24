@@ -8,15 +8,32 @@ import (
 	"testing"
 )
 
-func TestLoginRequiresProjectID(t *testing.T) {
-	client := NewClient()
+func TestLoginAllowsOmittedProjectID(t *testing.T) {
+	t.Parallel()
 
-	_, err := client.Login(context.Background(), LoginRequest{
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			t.Fatalf("unexpected method: %s", r.Method)
+		}
+		if got := r.Header.Get("X-Project-Id"); got != "" {
+			t.Fatalf("unexpected project header: %s", got)
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"code":200,"message":"ok","data":{"accessToken":"token-123","expiresIn":3600}}`))
+	}))
+	defer server.Close()
+
+	client := NewClient(WithBaseAPIURL(server.URL))
+	result, err := client.Login(context.Background(), LoginRequest{
 		Email:    "user@example.com",
 		Password: "password",
 	})
-	if err == nil || err.Error() != "project id is required" {
-		t.Fatalf("expected missing project id error, got %v", err)
+	if err != nil {
+		t.Fatalf("Login returned error: %v", err)
+	}
+	if result.AccessToken != "token-123" {
+		t.Fatalf("unexpected access token: %s", result.AccessToken)
 	}
 }
 

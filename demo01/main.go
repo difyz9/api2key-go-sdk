@@ -19,7 +19,6 @@ func main() {
 
 	baseURL := getenv("API2KEY_BASE_URL", api2key.DefaultBaseAPIURL)
 	projectID := getenv("API2KEY_PROJECT_ID", "")
-	serviceSecret := getenv("API2KEY_SERVICE_SECRET", "")
 	provider := getenv("API2KEY_PROVIDER", "azure")
 	locale := getenv("API2KEY_LOCALE", "zh-CN")
 	voice := getenv("API2KEY_VOICE", "zh-CN-XiaoxiaoNeural")
@@ -42,9 +41,6 @@ func main() {
 
 	options := []api2key.Option{
 		api2key.WithBaseAPIURL(baseURL),
-	}
-	if serviceSecret != "" {
-		options = append(options, api2key.WithServiceSecret(serviceSecret))
 	}
 	client := api2key.NewClient(options...)
 
@@ -161,17 +157,12 @@ func main() {
 		log.Fatal(statErr)
 	}
 
-	if serviceSecret == "" {
-		log.Println("skip credits demo: API2KEY_SERVICE_SECRET not set")
-		return
-	}
-
-	creditsResult, err := client.SpendCredits(ctx, api2key.SpendCreditsRequest{
-		UserID:      "user_123",
+	creditsResult, err := client.DeductCredits(ctx, api2key.DeductCreditsRequest{
+		APIKey:      apiKeySecret,
 		Amount:      10,
 		Service:     "ai_chat",
 		TaskID:      "order_20260401_001",
-		Description: "SDK 扣费测试",
+		Description: "SDK API key 扣费测试",
 	})
 	if err != nil {
 		log.Fatal(err)

@@ -39,7 +39,7 @@ import "github.com/difyz9/api2key-go-sdk/api2key"
 
 1. 用户态：`LoginRequest.ProjectID` 现在是可选的，后端会优先使用当前登录项目，再回落到用户绑定项目或默认项目。
 2. API Key 态：适合语音、AI、以及现在已经支持的“基于 API key 直接扣减积分”。
-3. 服务态：`/credits/spend`、`/credits/reserve` 这类内部接口仍然要求 `WithServiceSecret(...)`，并继续显式传 `ProjectID`。
+3. API Key 态：语音、AI、以及积分扣减都可以直接使用 API key，不需要 `service secret`。
 
 ```go
 package main
@@ -151,9 +151,8 @@ func main() {
 		log.Fatal(err)
 	}
 
-	creditsResult, err := client.SpendCredits(ctx, api2key.SpendCreditsRequest{
-		ProjectID:   "ytb2bili",
-		UserID:      "user_123",
+	creditsResult, err := client.DeductCredits(ctx, api2key.DeductCreditsRequest{
+		APIKey:      apiKeyResult.Key.Secret,
 		Amount:      10,
 		Service:     "ai_chat",
 		TaskID:      "order_20260401_001",
@@ -432,10 +431,9 @@ go run ./ai_chat
 - `SynthesizeSpeechRequest` 支持 `StorageKey` 和 `DownloadFilename`，可把远端音频固定存成 `video_id/index_0001.mp3` 这种结构。
 - `WithSpeechURL(...)` 是当前推荐的语音根路径覆盖项，适合本地调试、灰度环境或特殊部署。
 - `WithTTSURL(...)` 仍然保留，作为兼容别名，不影响旧调用代码。
-- `WithServiceSecret(...)` 只在调用积分接口时需要，单独调用 TTS / ASR 不需要。
 - 用户侧登录后，`CreateAPIKey` / `EnsureAPIKey` 默认跟随当前 JWT 中的项目上下文，不需要再额外显式传 `ProjectID`。
 - 用户态积分查询现在同时支持 `AccessToken` 和 `APIKey`；推荐用 `GetCreditsBalanceWithOptions(...)` 与 `GetLedger(...)` 传入二者之一。
-- 积分相关接口仍然要求显式传 `ProjectID`，因为它们是服务端调用接口，走 `X-Service-Secret`。
+- 积分扣减接口推荐使用 `DeductCredits(...)` 配合 `APIKey` 或 `AccessToken`，不再依赖 `service secret`。
 - 直付支付接口使用登录返回的 `accessToken`，不使用 `service secret` 或 `api key`。
 
 ## 最小调用模型
@@ -468,27 +466,20 @@ if err != nil {
 }
 ```
 
-### 2. 服务态
+### 2. API Key 扣减积分
 
-服务态最小闭环：
+API key 最小闭环：
 
-1. 用 `WithServiceSecret(...)` 初始化 client
-2. 显式传 `ProjectID`
-3. 调用 `SpendCredits` / `ReserveCredits`
+1. 登录并创建 API key，或者直接使用已有 API key
+2. 调用 `DeductCredits`
 
 最小示例：
 
 ```go
-serviceClient := api2key.NewClient(
-	api2key.WithBaseAPIURL("https://open.api2key.com"),
-	api2key.WithServiceSecret("your-service-secret"),
-)
-
-_, err = serviceClient.SpendCredits(ctx, api2key.SpendCreditsRequest{
-	ProjectID: "ytb2bili",
-	UserID:    "user_123",
-	Amount:    10,
-	Service:   "ai_chat",
+_, err = client.DeductCredits(ctx, api2key.DeductCreditsRequest{
+	APIKey:  apiKey,
+	Amount:  10,
+	Service: "ai_chat",
 })
 if err != nil {
 	log.Fatal(err)
@@ -658,9 +649,8 @@ go run ./example
 ```bash
 API2KEY_EMAIL=user@example.com \
 API2KEY_PASSWORD='Test123456!' \
-API2KEY_SERVICE_SECRET=your-service-secret \
+API2KEY_PROJECT_ID=ytb2bili \
 API2KEY_EXAMPLE_DO_CREDITS=true \
-API2KEY_CREDITS_USER_ID=user_123 \
 go run ./example
 ```
 
@@ -912,11 +902,10 @@ go run ./subtitle_tts
 
 ### 积分
 
+- `GetCreditsBalance`
+- `GetCreditsBalanceWithOptions`
 - `GetLedger`
-- `SpendCredits`
-- `ReserveCredits`
-- `ConfirmCredits`
-- `CancelCredits`
+- `DeductCredits`
 
 ## 设计说明
 
