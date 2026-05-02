@@ -74,6 +74,7 @@ type ASRRequest struct {
 	Provider        string
 	EngineModelType string
 	Async           bool
+	ForceSync       bool
 }
 
 type ASRTaskQueryRequest struct {
@@ -93,6 +94,7 @@ type DownloadSpeechAudioResult struct {
 
 type ASRTaskResponse struct {
 	TaskID            int64          `json:"taskId"`
+	TaskIDText        string         `json:"taskId"`
 	StatusStr         string         `json:"statusStr"`
 	RequestID         string         `json:"requestId,omitempty"`
 	EngineModelType   string         `json:"engineModelType,omitempty"`
@@ -100,6 +102,7 @@ type ASRTaskResponse struct {
 	SourceName        string         `json:"sourceName,omitempty"`
 	SourceSize        int64          `json:"sourceSize,omitempty"`
 	Provider          string         `json:"provider,omitempty"`
+	Status            int64          `json:"status,omitempty"`
 	RetryAfterSeconds int64          `json:"retryAfterSeconds,omitempty"`
 	Text              string         `json:"text,omitempty"`
 	SRT               string         `json:"srt,omitempty"`
@@ -107,6 +110,19 @@ type ASRTaskResponse struct {
 	Error             string         `json:"error,omitempty"`
 	Segments          any            `json:"segments,omitempty"`
 	Raw               map[string]any `json:"-"`
+}
+
+func (r *ASRTaskResponse) EffectiveTaskID() string {
+	if r == nil {
+		return ""
+	}
+	if strings.TrimSpace(r.TaskIDText) != "" {
+		return strings.TrimSpace(r.TaskIDText)
+	}
+	if r.TaskID > 0 {
+		return strconv.FormatInt(r.TaskID, 10)
+	}
+	return ""
 }
 
 func (c *Client) ListVoices(ctx context.Context, input ListVoicesRequest) (*ListVoicesResponse, error) {
@@ -313,7 +329,11 @@ func (c *Client) submitASR(ctx context.Context, action string, input ASRRequest)
 			"provider":        provider,
 			"audioUrl":        input.AudioURL,
 			"engineModelType": engineModelType,
-			"async":           input.Async,
+		}
+		if input.Async {
+			payload["async"] = true
+		} else if input.ForceSync {
+			payload["async"] = false
 		}
 		var raw map[string]any
 		if err := c.requestJSON(ctx, http.MethodPost, endpoint, headers, payload, &raw); err != nil {
@@ -328,6 +348,8 @@ func (c *Client) submitASR(ctx context.Context, action string, input ASRRequest)
 	}
 	if input.Async {
 		fields["async"] = "true"
+	} else if input.ForceSync {
+		fields["async"] = "false"
 	}
 	var raw map[string]any
 	if err := c.requestMultipart(ctx, endpoint, headers, fields, "file", input.AudioFilePath, &raw); err != nil {
@@ -385,7 +407,9 @@ func (c *Client) DownloadSpeechAudioByQuery(ctx context.Context, key string) (*D
 
 func decodeASRTask(raw map[string]any) *ASRTaskResponse {
 	result := &ASRTaskResponse{Raw: raw}
+	result.TaskIDText = anyToStringOrNumber(raw["taskId"])
 	result.TaskID = anyToInt64(raw["taskId"])
+	result.Status = anyToInt64(raw["status"])
 	result.StatusStr = anyToString(raw["statusStr"])
 	result.RequestID = anyToString(raw["requestId"])
 	result.EngineModelType = anyToString(raw["engineModelType"])
@@ -398,6 +422,9 @@ func decodeASRTask(raw map[string]any) *ASRTaskResponse {
 	result.SRT = anyToString(raw["srt"])
 	result.ResultURL = anyToString(raw["resultUrl"])
 	result.Error = anyToString(raw["error"])
+	if strings.TrimSpace(result.Error) == "" {
+		result.Error = anyToString(raw["errorMessage"])
+	}
 	result.Segments = raw["segments"]
 	return result
 }
@@ -408,6 +435,27 @@ func anyToString(value any) string {
 		return v
 	case []byte:
 		return string(v)
+	default:
+		return ""
+	}
+}
+
+func anyToStringOrNumber(value any) string {
+	switch v := value.(type) {
+	case string:
+		return strings.TrimSpace(v)
+	case []byte:
+		return strings.TrimSpace(string(v))
+	case float64:
+		return strconv.FormatInt(int64(v), 10)
+	case float32:
+		return strconv.FormatInt(int64(v), 10)
+	case int:
+		return strconv.Itoa(v)
+	case int64:
+		return strconv.FormatInt(v, 10)
+	case int32:
+		return strconv.FormatInt(int64(v), 10)
 	default:
 		return ""
 	}
