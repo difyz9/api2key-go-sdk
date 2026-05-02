@@ -57,23 +57,7 @@ type LLMBatchTranslator struct {
 }
 
 func main() {
-	
-	
-	os.Setenv("API2KEY_BASE_URL", "https://stage.api2key.com")
-	os.Setenv("API2KEY_API_KEY", "sk-EA8ADC--")
-	os.Setenv("API2KEY_AI_MODEL", "openai/gpt-4o-mini")
-	os.Setenv("DEMO02_INPUT", "demo02/tp7Ojf7dPVI.srt")
-	os.Setenv("DEMO02_OUTPUT", "demo02/tp7Ojf7dPVI.zh-CN.srt")
-	os.Setenv("DEMO02_SOURCE_LANG", "en")
-	os.Setenv("DEMO02_TARGET_LANG", "zh-CN")
-	os.Setenv("DEMO02_BATCH_SIZE", "12")
-	os.Setenv("DEMO02_CONTEXT_SIZE", "2")
-	os.Setenv("DEMO02_RETRY_COUNT", "2")
-	os.Setenv("API2KEY_TIMEOUT", "5m")
 	cfg := loadConfig()
-
-
-
 	ctx, cancel := context.WithTimeout(context.Background(), cfg.Timeout)
 	defer cancel()
 
@@ -88,7 +72,7 @@ func main() {
 	translator := &LLMBatchTranslator{
 		client: api2key.NewClient(api2key.WithBaseAPIURL(cfg.BaseAPIURL)),
 		config: cfg,
-		logger: log.New(os.Stdout, "[demo02] ", log.LstdFlags),
+		logger: log.New(os.Stdout, "[subtitle_translate] ", log.LstdFlags),
 	}
 
 	runConfig := TranslationRunConfig{
@@ -128,8 +112,8 @@ func main() {
 }
 
 func loadConfig() TranslatorConfig {
-	defaultInputPath := filepath.Join("demo02", "tp7Ojf7dPVI.srt")
-	defaultOutputPath := filepath.Join("demo02", "tp7Ojf7dPVI.zh-CN.srt")
+	defaultInputPath := filepath.Join("ai", "subtitle_translate", "tp7Ojf7dPVI.srt")
+	defaultOutputPath := filepath.Join("ai", "subtitle_translate", "tp7Ojf7dPVI.zh-CN.srt")
 
 	var cfg TranslatorConfig
 	flag.StringVar(&cfg.BaseAPIURL, "base-url", getenv("API2KEY_BASE_URL", api2key.DefaultBaseAPIURL), "base api url")

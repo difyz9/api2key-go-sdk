@@ -202,11 +202,12 @@ fmt.Println(payment.Data.QRCode)
 命令行示例：
 
 ```bash
+cd api2key-go-sdk/examples && \
 API2KEY_BASE_URL=https://stage.api2key.com \
 API2KEY_EMAIL=your-email@example.com \
 API2KEY_PASSWORD='your-password' \
 API2KEY_EXAMPLE_DO_DIRECT_PAY=1 \
-go run example/main.go
+go run ./workflow/full_cli
 ```
 
 如果你明确要锁定某个项目，再额外传 `API2KEY_PROJECT_ID` 即可。
@@ -231,14 +232,15 @@ fmt.Println(resp.BalanceAfter)
 fmt.Println(resp.Idempotent)
 ```
 
-完整可运行案例见 [credits_ledger/main.go](/Users/apple/opt/difyz_0329/0424/api2key-go-sdk/credits_ledger/main.go)。
+完整可运行案例见 [examples/credits/deduct_and_ledger/main.go](/Users/apple/opt/difyz_0329/0501/api2key-go-sdk/examples/credits/deduct_and_ledger/main.go)。
 
 命令行示例：
 
 ```bash
+cd api2key-go-sdk/examples && \
 API2KEY_BASE_URL=https://stage.api2key.com \
 API2KEY_API_KEY=your-api-key \
-go run credits_ledger/main.go
+go run ./credits/deduct_and_ledger
 ```
 
 ## 获取当前用户与项目上下文
@@ -400,14 +402,15 @@ fmt.Println(len(history.Messages))
 - `AISession` 会自动复用默认的 `projectId`、`apiKey` 或 `accessToken`，适合你在业务侧嵌入后继续扩展自己的方法。
 - 如果需要 Anthropic 或 Gemini，只需调用 `AnthropicMessages`、`AnthropicMessagesStream`、`GoogleGenerateContent`，请求体保持各自官方格式即可。
 
-只用 `baseUrl + apiKey` 直接发起 AI 对话的最小案例已经放在 `ai_chat/main.go`：
+只用 `baseUrl + apiKey` 直接发起 AI 对话的最小案例已经放在 `examples/ai/chat/main.go`：
 
 ```bash
+cd api2key-go-sdk/examples && \
 API2KEY_BASE_URL=https://stage.api2key.com \
 API2KEY_API_KEY=your-api-key \
 API2KEY_AI_MODEL=openai/gpt-4o-mini \
 API2KEY_AI_PROMPT='请介绍一下 api2key 的能力' \
-go run ./ai_chat
+go run ./ai/chat
 ```
 
 这个案例不需要登录，不需要 email/password，也不需要额外创建 session；前提是你传入的 API Key 已经可用于 AI 对话。
@@ -415,12 +418,13 @@ go run ./ai_chat
 如果你想直接看流式输出：
 
 ```bash
+cd api2key-go-sdk/examples && \
 API2KEY_BASE_URL=https://stage.api2key.com \
 API2KEY_API_KEY=your-api-key \
 API2KEY_AI_MODEL=openai/gpt-4o-mini \
 API2KEY_AI_PROMPT='请流式输出一段简短介绍' \
 API2KEY_AI_STREAM=true \
-go run ./ai_chat
+go run ./ai/chat
 ```
 
 说明：
@@ -524,7 +528,7 @@ downloaded, err := client.DownloadSpeechAudio(ctx, result.StorageKey)
 
 ## 可运行示例
 
-如果你的目标只是“先获取用户的 apikey 列表，列表为空才创建一个；列表不为空就直接取一个返回，而且不要重复创建”，推荐直接使用 [ensure_apikey/main.go](/Users/apple/opt/difyz_0329/0413/api2key-go-sdk/ensure_apikey/main.go) 这个独立案例：
+如果你的目标只是“先获取用户的 apikey 列表，列表为空才创建一个；列表不为空就直接取一个返回，而且不要重复创建”，推荐直接使用 [examples/auth/ensure_apikey/main.go](/Users/apple/opt/difyz_0329/0501/api2key-go-sdk/examples/auth/ensure_apikey/main.go) 这个独立案例：
 
 1. 先登录拿 `accessToken`
 2. 调用 `ListAPIKeys` 获取当前用户的 apikey 列表
@@ -533,21 +537,22 @@ downloaded, err := client.DownloadSpeechAudio(ctx, result.StorageKey)
 
 注意：现在服务端列表接口会返回 `secret`。这个案例会优先复用“列表里已有明文 secret 的 key”；如果现有 key 都没有明文 `secret`，就会新创建一个 key，并返回新 key 的完整 apikey。
 
-仓库里有多个可运行示例：
+仓库里的示例现在已经独立整理到 `examples/` 子项目，并按模块分组：
 
-- `ensure_apikey/main.go`：独立 apikey 案例，先查用户 apikey 列表，有就直接取一个，没有才创建，避免重复创建。
-- `apikey_credits/main.go`：纯 API key 查询积分案例，不走登录，直接查询余额和最近流水。
-- `ai_chat/main.go`：最小 AI 对话示例，只需要 `baseUrl + apiKey`。
-- `demo02/main.go`：字幕翻译示例，直接读取 `.srt`，使用 SDK 封装的 AI chat 按批次翻译后输出新的 `.srt`。
-- `example/main.go`：通用 CLI 风格示例，适合串联登录、建 key、查 voices、做 speech / SRT / credits。
-- `demo01/main.go`：更短的烟雾测试示例，默认会跑登录、建 key、语音合成和一次 ASR 轮询。
-- `subtitle_tts/main.go`：登录后自动加载或创建用户 API Key，再把 `.srt` 或 `.txt` 文本逐段合成音频，并打印积分余额前后变化。
-- `subtitle_tts/main.go` 默认会把远端存储路径组织成 `<video-id>/index_0001.mp3` 这种格式。
+- `examples/auth/ensure_apikey/main.go`：独立 apikey 案例，先查用户 apikey 列表，有就直接取一个，没有才创建，避免重复创建。
+- `examples/credits/apikey_balance/main.go`：纯 API key 查询积分案例，不走登录，直接查询余额和最近流水。
+- `examples/credits/deduct_and_ledger/main.go`：API key 直接扣减积分并核对最近流水。
+- `examples/ai/chat/main.go`：最小 AI 对话示例，只需要 `baseUrl + apiKey`。
+- `examples/ai/subtitle_translate/main.go`：字幕翻译示例，直接读取 `.srt`，使用 SDK 封装的 AI chat 按批次翻译后输出新的 `.srt`。
+- `examples/workflow/full_cli/main.go`：通用 CLI 风格示例，适合串联登录、建 key、查 voices、做 speech / SRT / credits / payment。
+- `examples/speech/smoke_test/main.go`：更短的烟雾测试示例，默认会跑登录、建 key、语音合成和一次 ASR 轮询。
+- `examples/speech/subtitle_tts/main.go`：登录后自动加载或创建用户 API Key，再把 `.srt` 或 `.txt` 文本逐段合成音频，并打印积分余额前后变化。
+- `examples/speech/subtitle_tts/main.go` 默认会把远端存储路径组织成 `<video-id>/index_0001.mp3` 这种格式。
 
-先进入仓库根目录：
+先进入示例项目目录：
 
 ```bash
-cd api2key-go-sdk
+cd api2key-go-sdk/examples
 ```
 
 只跑独立的 apikey 案例：
@@ -556,7 +561,7 @@ cd api2key-go-sdk
 API2KEY_EMAIL=user@example.com \
 API2KEY_PASSWORD='Test123456!' \
 API2KEY_KEY_NAME='sdk-example-key' \
-go run ./ensure_apikey
+go run ./auth/ensure_apikey
 ```
 
 运行 `ensure_apikey` 时，项目 ID 现在是登录必填项：
@@ -566,7 +571,7 @@ API2KEY_EMAIL=user@example.com \
 API2KEY_PASSWORD='Test123456!' \
 API2KEY_KEY_NAME='sdk-example-key' \
 API2KEY_PROJECT_ID='your-project-id' \
-go run ./ensure_apikey
+go run ./auth/ensure_apikey
 ```
 
 如果你的目标只是“我已经有 sk- 开头的用户 API key，现在只想查积分余额和最近流水”，直接运行这个最小案例：
@@ -574,7 +579,7 @@ go run ./ensure_apikey
 ```bash
 API2KEY_BASE_URL=https://open.api2key.com \
 API2KEY_API_KEY='sk-your-api-key' \
-go run ./apikey_credits
+go run ./credits/apikey_balance
 ```
 
 如果该 API key 绑定了项目，通常不需要再显式传 `API2KEY_PROJECT_ID`。如果你想在 JWT 场景或未锁项目场景下指定流水过滤项目，也可以追加：
@@ -583,31 +588,31 @@ go run ./apikey_credits
 API2KEY_BASE_URL=https://open.api2key.com \
 API2KEY_API_KEY='sk-your-api-key' \
 API2KEY_PROJECT_ID='ytb2bili' \
-go run ./apikey_credits
+go run ./credits/apikey_balance
 ```
 
-如果你的目标是“直接把现有英文字幕翻译成中文字幕”，可以运行 `demo02`：
+如果你的目标是“直接把现有英文字幕翻译成中文字幕”，可以运行 `ai/subtitle_translate`：
 
 ```bash
 API2KEY_BASE_URL=https://stage.api2key.com \
 API2KEY_API_KEY='sk-your-api-key' \
 API2KEY_AI_MODEL='openai/gpt-4o-mini' \
-DEMO02_INPUT=./demo02/tp7Ojf7dPVI.srt \
-DEMO02_OUTPUT=./demo02/tp7Ojf7dPVI.zh-CN.srt \
+DEMO02_INPUT=./ai/subtitle_translate/tp7Ojf7dPVI.srt \
+DEMO02_OUTPUT=./ai/subtitle_translate/tp7Ojf7dPVI.zh-CN.srt \
 DEMO02_SOURCE_LANG='en' \
 DEMO02_TARGET_LANG='zh-CN' \
-go run ./demo02
+go run ./ai/subtitle_translate
 ```
 
 这个案例会先用模型判断是否真的需要翻译，再按批次和前后文做字幕翻译，最后输出新的 `.srt` 文件。
 
-通用 CLI 示例仍然保留在 `example/main.go`，只跑登录、创建 key、查询语音列表：
+通用 CLI 示例现在位于 `examples/workflow/full_cli/main.go`，只跑登录、创建 key、查询语音列表：
 
 ```bash
 API2KEY_EMAIL=user@example.com \
 API2KEY_PASSWORD='Test123456!' \
 API2KEY_PROJECT_ID='your-project-id' \
-go run ./example
+go run ./workflow/full_cli
 ```
 
 连同语音合成一起跑：
@@ -618,7 +623,7 @@ API2KEY_PASSWORD='Test123456!' \
 API2KEY_PROJECT_ID=ytb2bili \
 API2KEY_VIDEO_ID=video_123 \
 API2KEY_EXAMPLE_DO_SPEECH=true \
-go run ./example -output ./example/output.mp3
+go run ./workflow/full_cli -output ./workflow/full_cli/output.mp3
 ```
 
 如果希望显式指定远端路径，也可以直接传：
@@ -630,7 +635,7 @@ API2KEY_PROJECT_ID=ytb2bili \
 API2KEY_EXAMPLE_DO_SPEECH=true \
 API2KEY_STORAGE_KEY='video_123/index_0168.mp3' \
 API2KEY_DOWNLOAD_FILENAME='index_0168.mp3' \
-go run ./example -output ./example/output.mp3
+go run ./workflow/full_cli -output ./workflow/full_cli/output.mp3
 ```
 
 连同 SRT 转写一起跑：
@@ -641,7 +646,7 @@ API2KEY_PASSWORD='Test123456!' \
 API2KEY_PROJECT_ID=ytb2bili \
 API2KEY_EXAMPLE_DO_SRT=true \
 API2KEY_AUDIO_FILE=/path/to/audio.wav \
-go run ./example
+go run ./workflow/full_cli
 ```
 
 连同积分扣减一起跑：
@@ -651,7 +656,7 @@ API2KEY_EMAIL=user@example.com \
 API2KEY_PASSWORD='Test123456!' \
 API2KEY_PROJECT_ID=ytb2bili \
 API2KEY_EXAMPLE_DO_CREDITS=true \
-go run ./example
+go run ./workflow/full_cli
 ```
 
 连同直付支付一起跑：
@@ -662,7 +667,7 @@ API2KEY_PASSWORD='Test123456!' \
 API2KEY_PROJECT_ID=ytb2bili \
 API2KEY_EXAMPLE_DO_DIRECT_PAY=true \
 API2KEY_PAYMENT_AMOUNT=0.01 \
-go run ./example
+go run ./workflow/full_cli
 ```
 
 创建后立即轮询支付状态：
@@ -674,7 +679,7 @@ API2KEY_PROJECT_ID=ytb2bili \
 API2KEY_EXAMPLE_DO_DIRECT_PAY=true \
 API2KEY_EXAMPLE_POLL_DIRECT_PAY=true \
 API2KEY_PAYMENT_AMOUNT=0.01 \
-go run ./example
+go run ./workflow/full_cli
 ```
 
 运行更短的 smoke demo：
@@ -685,7 +690,7 @@ API2KEY_PASSWORD='Test123456!' \
 API2KEY_PROJECT_ID=ytb2bili \
 API2KEY_VIDEO_ID=demo-video \
 API2KEY_SPEECH_URL=https://open.api2key.com \
-go run ./demo01
+go run ./speech/smoke_test
 ```
 
 如果已经有现成 API Key，也可以直接跳过登录，只传入口地址和 key：
@@ -719,18 +724,18 @@ _ = voices
 
 如果你已经有现成 API Key，也可以直接传 `API2KEY_API_KEY` 跳过登录。
 
-示例源码见 `subtitle_tts/main.go`。
+示例源码见 `examples/speech/subtitle_tts/main.go`。
 
-仓库里已经放了可直接 `source` 的模板：[subtitle_tts/.env.example](/Users/apple/opt/difyz_0329/0412/api2key-go-sdk/subtitle_tts/.env.example)。
+仓库里已经放了可直接 `source` 的模板：[examples/speech/subtitle_tts/.env.example](/Users/apple/opt/difyz_0329/0501/api2key-go-sdk/examples/speech/subtitle_tts/.env.example)。
 
 在 macOS / Linux 下，可以直接这样运行：
 
 ```bash
-cd api2key-go-sdk
+cd api2key-go-sdk/examples
 set -a
-source ./subtitle_tts/.env.example
+source ./speech/subtitle_tts/.env.example
 set +a
-go run ./subtitle_tts
+go run ./speech/subtitle_tts
 ```
 
 如果你已经有现成的 `sk-...`，只要把模板里的 `API2KEY_API_KEY` 填上，同时保留 `API2KEY_PROJECT_ID`，示例就会跳过登录，直接执行字幕合成。
@@ -829,7 +834,7 @@ fmt.Println(balance.Balance, ledger.Pagination.Total)
 
 ### 直接运行仓库示例
 
-先准备一个字幕文件，例如 `subtitle_tts/001.srt`，或者直接修改模板里的 `API2KEY_INPUT`。
+先准备一个字幕文件，例如 `examples/speech/subtitle_tts/001.srt`，或者直接修改模板里的 `API2KEY_INPUT`。
 
 PowerShell:
 
@@ -839,9 +844,9 @@ $env:API2KEY_EMAIL = "user@example.com"
 $env:API2KEY_PASSWORD = "Test123456!"
 $env:API2KEY_PROJECT_ID = "your-project-id"
 $env:API2KEY_KEY_NAME = "subtitle-tts"
-$env:API2KEY_INPUT = "./subtitle_tts/subtitle.srt"
-$env:API2KEY_OUTPUT = "./subtitle_tts/output"
-go run ./subtitle_tts
+$env:API2KEY_INPUT = "./speech/subtitle_tts/subtitle.srt"
+$env:API2KEY_OUTPUT = "./speech/subtitle_tts/output"
+go run ./speech/subtitle_tts
 ```
 
 也可以显式指定发音人、语言和远端视频目录：
@@ -856,9 +861,9 @@ $env:API2KEY_PROVIDER = "azure"
 $env:API2KEY_VOICE = "zh-CN-XiaoxiaoNeural"
 $env:API2KEY_LOCALE = "zh-CN"
 $env:API2KEY_VIDEO_ID = "video_123"
-$env:API2KEY_INPUT = "./subtitle_tts/subtitle.srt"
-$env:API2KEY_OUTPUT = "./subtitle_tts/output"
-go run ./subtitle_tts
+$env:API2KEY_INPUT = "./speech/subtitle_tts/subtitle.srt"
+$env:API2KEY_OUTPUT = "./speech/subtitle_tts/output"
+go run ./speech/subtitle_tts
 ```
 
 如果想跳过登录，也可以显式传一个现成 API Key：
@@ -867,9 +872,9 @@ go run ./subtitle_tts
 $env:API2KEY_BASE_URL = "https://open.api2key.com"
 $env:API2KEY_PROJECT_ID = "your-project-id"
 $env:API2KEY_API_KEY = "sk-your-api-key"
-$env:API2KEY_INPUT = "./subtitle_tts/subtitle.srt"
-$env:API2KEY_OUTPUT = "./subtitle_tts/output"
-go run ./subtitle_tts
+$env:API2KEY_INPUT = "./speech/subtitle_tts/subtitle.srt"
+$env:API2KEY_OUTPUT = "./speech/subtitle_tts/output"
+go run ./speech/subtitle_tts
 ```
 
 运行成功后会输出每段音频文件路径、本次实际使用的 provider、voice、format、每段 `charged` 信息，以及登录态下的积分余额前后变化。

@@ -26,7 +26,7 @@ func main() {
 	videoID := getenv("API2KEY_VIDEO_ID", "demo01-video")
 	storageKey := getenv("API2KEY_STORAGE_KEY", fmt.Sprintf("%s/index_0001.mp3", strings.Trim(videoID, "/")))
 	downloadName := getenv("API2KEY_DOWNLOAD_FILENAME", "index_0001.mp3")
-	outputPath := getenv("API2KEY_OUTPUT", filepath.Join("demo01", "output.mp3"))
+	outputPath := getenv("API2KEY_OUTPUT", filepath.Join("speech", "smoke_test", "output.mp3"))
 	audioFile := getenv("API2KEY_AUDIO_FILE", outputPath)
 	audioURL := getenv("API2KEY_AUDIO_URL", "")
 	email := getenv("API2KEY_EMAIL", "")

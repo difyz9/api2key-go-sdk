@@ -237,7 +237,7 @@ func loadConfig() config {
 	flag.StringVar(&cfg.Voice, "voice", getenv("API2KEY_VOICE", "zh-CN-XiaoxiaoNeural"), "voice short name")
 	flag.StringVar(&cfg.Text, "text", getenv("API2KEY_TEXT", "你好，这是 SDK example。"), "speech text")
 	flag.StringVar(&cfg.Format, "format", getenv("API2KEY_FORMAT", "audio-24khz-96kbitrate-mono-mp3"), "speech output format")
-	flag.StringVar(&cfg.Output, "output", getenv("API2KEY_OUTPUT", filepath.Join("example", "output.mp3")), "speech output path")
+	flag.StringVar(&cfg.Output, "output", getenv("API2KEY_OUTPUT", filepath.Join("workflow", "full_cli", "output.mp3")), "speech output path")
 	flag.StringVar(&cfg.StorageKey, "storage-key", getenv("API2KEY_STORAGE_KEY", ""), "optional custom remote storage key, e.g. video_123/index_0001.mp3")
 	flag.StringVar(&cfg.DownloadName, "download-name", getenv("API2KEY_DOWNLOAD_FILENAME", ""), "optional custom download filename, e.g. index_0001.mp3")
 	flag.StringVar(&cfg.VideoID, "video-id", getenv("API2KEY_VIDEO_ID", "sdk-example-video"), "remote video id used to build default storage key when storage-key is empty")
